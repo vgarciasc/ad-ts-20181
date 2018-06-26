@@ -4,16 +4,17 @@
 
 #ifndef AD_EVENTO_H
 #define AD_EVENTO_H
-enum EventType {
-	SERVER, DATA, VOICE
+enum class EventType {
+	EMPTY, SERVER, DATA, VOICE
 };
 
 class Event {
 public:
-	long long int time;
+	double time;
+	double serviceTime;
 	EventType type;
-
-	Event(long long int time, EventType type);
+	Event(double time, EventType type);
+	Event(double time, double serviceTime, EventType type);
 
 	friend bool operator<(Event lhs, Event rhs);
 };

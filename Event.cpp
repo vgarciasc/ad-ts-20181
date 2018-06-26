@@ -4,12 +4,26 @@
 
 #include "Event.h"
 
-Event::Event(long long int time, EventType type) {
+Event::Event(
+		double time,
+		EventType type) {
 	this->time = time;
 	this->type = type;
 }
 
-bool operator<(const Event lhs, const Event rhs) {
-		return lhs.time < rhs.time;
+Event::Event(
+		double time,
+		double serviceTime,
+		EventType type) {
+	this->time = time;
+	this->type = type;
+	this->serviceTime = serviceTime;
 }
 
+bool
+operator<(
+		const Event lhs,
+		const Event rhs) {
+	return lhs.time <
+		   rhs.time;
+}
