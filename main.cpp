@@ -6,12 +6,16 @@
 using namespace std;
 
 constexpr double SERVER_SPEED = 2e6;//(1 >> 21); //bits/segundo
+enum SimulationEvent {
+	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
+};
 
 const int DATA_ARRIVAL_TIME = 500; // TODO V.A. exp. lambda1 para tempo até a próxima chegada de dados em milisegundos
 constexpr int DATA_PACKAGE_SIZE_IN_BYTES = 512;// TODO V.A. com densidade f(x)=p1*u0(x-64)+p2*u0(x-512)+p3*u0(x-1500)+(p/1436)[u-1(x-64)–u-1(x-1500)] com p1=30%, p2=10%, p3=30%, p=1-p1-p2-p3=30%
 constexpr int DATA_PACKAGE_SIZE_IN_BITS = DATA_PACKAGE_SIZE_IN_BYTES * 8;
 constexpr double DATA_TIME_OF_SERVICE = DATA_PACKAGE_SIZE_IN_BITS / SERVER_SPEED;
 
+const int VOICE_CHANNELS = 30;
 const int VOICE_SILENCE_TIME = 650; // TODO V.A. exp. com média 650 para fim do período de silêncio do canal de voz em segundos
 const int VOICE_ARRIVAL_TIME = 16; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 constexpr int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
@@ -58,6 +62,31 @@ EventType serveNextEvent(priority_queue<Event> &events_queue, queue<Event> &voic
 	}
 }
 
+/**
+ * Registra os dados passados nas respectivas estatísticas
+ * @param event
+ * @param time
+ * @param voiceChannel
+ */
+void registerStatistics(SimulationEvent event, double time, int voiceChannel = 0) {
+	switch (event) {
+		case DATA_ENTER_QUEUE:
+			break;
+		case DATA_ENTER_SERVER:
+			break;
+		case DATA_LEAVE_SERVER:
+			break;
+		case DATA_INTERRUPTED:
+			break;
+		case VOICE_ENTER_QUEUE:
+			break;
+		case VOICE_ENTER_SERVER:
+			break;
+		case VOICE_LEAVE_SERVER:
+			break;
+	}
+}
+
 int main(int argc, char *argv[]) {
 	priority_queue<Event> arrivals; // Estrutura para organizar as chegadas
 	queue<Event> data, voice; // Filas de data e voz
@@ -65,9 +94,9 @@ int main(int argc, char *argv[]) {
 	int interruptedDataPackages = 0; // Pacotes de dados interrompidos (usado para invalidar os respectivos pacotes quando a antiga saída aparecer na lista)
 
 	// Calcula o tempo de chegada de cada evento
-	arrivals.emplace(DATA_ARRIVAL_TIME, EventType::DATA);
-	for (int i = 0; i < 30; ++i) {
-		arrivals.emplace(VOICE_SILENCE_TIME, EventType::VOICE);
+	arrivals.emplace(DATA_ARRIVAL_TIME, DATA_TIME_OF_SERVICE, EventType::DATA);
+	for (int i = 0; i < VOICE_CHANNELS; ++i) {
+		arrivals.emplace(VOICE_SILENCE_TIME, VOICE_TIME_OF_SERVICE, EventType::VOICE, i);
 	}
 /*	Event server(INTMAX_MAX, SERVER);
 	for (int i = 0; i < AMOSTRAS; ++i) {
@@ -113,9 +142,8 @@ int main(int argc, char *argv[]) {
 		arrivals.pop();
 		switch (arrival.type) {
 			case EventType::DATA:
-				arrival.serviceTime = DATA_TIME_OF_SERVICE;
 				data.push(arrival);
-				arrivals.emplace(arrival.time + DATA_ARRIVAL_TIME, EventType::DATA);
+				arrivals.emplace(arrival.time + DATA_ARRIVAL_TIME, DATA_TIME_OF_SERVICE, EventType::DATA);
 
 				if (serverOccupied == EventType::EMPTY) {
 					serveEvent(arrival, arrivals, arrival.time);
@@ -125,10 +153,10 @@ int main(int argc, char *argv[]) {
 			case EventType::VOICE:
 				arrival.serviceTime = VOICE_TIME_OF_SERVICE;
 //				voice.push(arrival);
-				if (voiceContinue)
-					arrivals.emplace(arrival.time + VOICE_ARRIVAL_TIME, EventType::VOICE);
-				else
-					arrivals.emplace(arrival.time + VOICE_ARRIVAL_TIME + VOICE_SILENCE_TIME, EventType::VOICE);
+				double t = arrival.time + VOICE_ARRIVAL_TIME;
+				if (!voiceContinue)
+					t += VOICE_SILENCE_TIME;
+				arrivals.emplace(t, VOICE_TIME_OF_SERVICE, EventType::VOICE, arrival.channel);
 
 				if (serverOccupied == EventType::EMPTY) {
 					serveEvent(arrival, arrivals, arrival.time);
