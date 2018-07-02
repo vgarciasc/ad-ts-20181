@@ -13,8 +13,10 @@ public:
 	double time;
 	double serviceTime;
 	EventType type;
+	int channel;
 	Event(double time, EventType type);
 	Event(double time, double serviceTime, EventType type);
+	Event(double time, double serviceTime, EventType type, int channel);
 
 	friend bool operator<(Event lhs, Event rhs);
 };
