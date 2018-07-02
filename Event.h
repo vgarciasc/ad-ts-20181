@@ -21,4 +21,4 @@ public:
 	friend bool operator<(Event lhs, Event rhs);
 };
 
-#endif AD_EVENTO_H
+#endif

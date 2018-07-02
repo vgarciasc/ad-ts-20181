@@ -1,5 +1,7 @@
 #include <iostream>
 #include <queue>
+#include <random>
+#include <functional>
 #include "Event.h"
 //#include <vld.h>
 
@@ -20,7 +22,8 @@ const int VOICE_SILENCE_TIME = 650; // TODO V.A. exp. com média 650 para fim do
 const int VOICE_ARRIVAL_TIME = 16; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 constexpr int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
-const double voiceContinue = 1.0 / 22; // Probabilidade de continuar o período ativo do canal de voz
+const int MEAN_N_VOICE_PACKAGE = 22;
+const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
 
 // Parâmetros da simulação
 const int AMOSTRAS = 1;
@@ -30,6 +33,28 @@ const bool PREEMPION = false;
 const int INVALID_SERVICE_TYPE = 1;
 const int INVALID_EVENT_ARRIVAL = 2;
 
+// Data channel random variable generators
+// TODO refatorar para uma função normal
+auto genDataPackageSize = []()->int {
+    static auto engine = default_random_engine{1};
+    static uniform_real_distribution dist {0.0, 1.0};
+    double x = dist(engine);
+
+    if(x < .3)
+        return 64;
+    else if(x <.4)
+        return 512;
+    else if(x < .7)
+        return 1500;
+    else
+        // TODO corrigir probabilidade das pontas
+        return (x - .7)*1436/.3 + 64;
+};
+
+auto genDataServiceTime = []() { return genDataPackageSize()*8/SERVER_SPEED; };
+// Voice channel random variable generators
+auto genEndOfActivePeriod = bind(bernoulli_distribution{1.0/MEAN_N_VOICE_PACKAGE}, default_random_engine{2}); // Returns true when the voice channel enters a silence period after a voice package arrival
+auto genSilencePeriod = bind(exponential_distribution{1.0/MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{3});
 /**
  * Coloca o evento na fila de eventos esperados com o tempo adequado
  * @param event
@@ -140,6 +165,7 @@ int main(int argc, char *argv[]) {
 	for (int i = 0; i < AMOSTRAS; ++i) {
 		Event arrival = arrivals.top();
 		arrivals.pop();
+		double t;
 		switch (arrival.type) {
 			case EventType::DATA:
 				data.push(arrival);
@@ -153,8 +179,8 @@ int main(int argc, char *argv[]) {
 			case EventType::VOICE:
 				arrival.serviceTime = VOICE_TIME_OF_SERVICE;
 //				voice.push(arrival);
-				double t = arrival.time + VOICE_ARRIVAL_TIME;
-				if (!voiceContinue)
+				t = arrival.time + VOICE_ARRIVAL_TIME;
+				if (genEndOfActivePeriod())
 					t += VOICE_SILENCE_TIME;
 				arrivals.emplace(t, VOICE_TIME_OF_SERVICE, EventType::VOICE, arrival.channel);
 
