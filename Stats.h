@@ -11,6 +11,7 @@ public:
 	double enterQueueTime = 0;
 	double waitTime = 0;
 	double serviceTime = 0;
+	double wastedServiceTime = 0;
 	int channel = 0;
 	Stats();
 	Stats(int channel, double serviceTime);
