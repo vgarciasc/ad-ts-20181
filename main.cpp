@@ -11,7 +11,7 @@ using namespace std;
 int SAMPLES = 1000000;
 int SIMULATIONS = 1;
 bool PREEMPTION = false;
-double UTILIZATION_1 = 0.1; //ρ1
+double UTILIZATION_1 = 0; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -59,7 +59,7 @@ double genDataArrivalTime(){
 //Voice//
 const int VOICE_CHANNELS = 1;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
-const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
+const int VOICE_PACKAGE_SIZE_IN_BITS = 40000; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
 const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
@@ -199,22 +199,24 @@ void resetStats() {
  */
 void printStats() {
     cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
-	cout << "lambda: " << n1Packages / max_time << " pacotes/seg" << endl;
+	cout << "lambda_1: " << n1Packages / max_time << " pacotes dados/seg" << endl;
+	cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "Max Time: " << max_time << endl;
-	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << ", E[T2]: " << W2 + X2 << ", E[W2]: " << W2 <<
+	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << endl;
+	cout << "E[T2]: " << W2 + X2 << ", E[W2]: " << W2 <<
 		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
 
 /**
--  * Imprime texto de ajuda para mostrar as opÃ§Ãµes a serem passadas para o programa
+-  * Imprime texto de ajuda para mostrar as opções a serem passadas para o programa
 -  */
 void printHelp(){
-	cout << "UTILIZAÃ‡ÃƒO:" << endl;
+	cout << "Utilização:" << endl;
 	cout << "_exe_ [OPTIONS]" << endl;
 	cout << "\t-h\t\tMostra essa ajuda" << endl;
-	cout << "\t-a int\tNÃºmero de amostras" << endl;
-	cout << "\t-s int\tNÃºmero de rodadas de simulaÃ§Ã£o" << endl;
-	cout << "\t-u double\tUtilizaÃ§Ã£o da fila 1" << endl;
+	cout << "\t-a int\tNúmero de amostras" << endl;
+	cout << "\t-s int\tNúmero de rodadas de simulação" << endl;
+	cout << "\t-u double\tUtilização da fila 1" << endl;
 	cout << "\t-p\tFila de dados pode ser interrompida ()" << endl;
 }
 
@@ -222,20 +224,20 @@ int main(int argc, char *argv[]) {
 	for (int p = 0; p < argc; ++p) {
     	string option = argv[p];
     	if (option[0] != '-') {
-    		cout << "OpÃ§Ã£o " << argv[p] << " invÃ¡lida" << endl;
+    		cout << "Opção " << argv[p] << " inválida" << endl;
     		continue;
     	}
     	switch (option[1]) {
-    		case 'a': //NÃºmero de amostras
+    		case 'a': //Número de amostras
     			SAMPLES = stoi(argv[++p]);
     			break;
-    		case 'p': // Com ou sem preempÃ§Ã£o
+    		case 'p': // Com ou sem preempção
     			PREEMPTION = true;
     			break;
-    		case 'r': // NÃºmero de rodadas de simulaÃ§Ã£o
+    		case 'r': // Número de rodadas de simulação
     			SIMULATIONS = stoi(argv[++p]);
     			break;
-    		case 'u': // UtilizaÃ§Ã£o da fila de dados
+    		case 'u': // Utilização da fila de dados
     			UTILIZATION_1 = stod(argv[++p]);
     			DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
     			break;
@@ -243,7 +245,7 @@ int main(int argc, char *argv[]) {
     			printHelp();
     			return 0;
     		default:
-    			cout << "OpÃ§Ã£o " << argv[p] << " invÃ¡lida" << endl;
+    			cout << "Opção " << argv[p] << " inválida" << endl;
     			continue;
     	}
     }
@@ -273,6 +275,7 @@ int main(int argc, char *argv[]) {
 
 			max_time = arrival.time;
 			lastTime = arrival.time;
+			totalTime = arrival.time;
 
 			switch (arrival.type) {
 				case EventType::DATA:
