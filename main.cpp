@@ -8,10 +8,10 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-const int SAMPLES = 10;
+const int SAMPLES = 1000000;
 const int SIMULATIONS = 1;
 const bool PREEMPTION = true;
-const double UTILIZATION_1 = 0.1; //ρ1
+const double UTILIZATION_1 = 0.5; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -66,6 +66,10 @@ const double X2 = VOICE_TIME_OF_SERVICE;
 double W1, X1, Nq1, W2, Nq2, JitterMean, JitterVariance;
 double channelsLastDeparture[VOICE_CHANNELS];
 
+double aux_tempo_entre_chegadas = 0;
+
+double max_time = 0;
+
 //FUNÇÕES
 /**
  * Calcula o tempo da primeira chegada de cada evento e coloca na heap de eventos
@@ -86,7 +90,9 @@ void setup(priority_queue<Event> &arrivals) {
  */
 void serveEvent(Event event, priority_queue<Event> &events_queue, double currentTime) {
 	event.stats->waitTime += currentTime - event.stats->enterQueueTime;
+//	cout << "> Gerado novo serviço de dados terminando em: " << currentTime + event.stats->serviceTime << endl;
 	events_queue.emplace(currentTime + event.stats->serviceTime, EventType::SERVER, event.stats);
+//	cout << "~ " << events_queue.top().time << " ~";
 }
 
 /**
@@ -127,6 +133,8 @@ void calculateAreaStatistics() {
 	// Estatísticas dos dados
 	Nq1 = totalDataTime / totalTime;
 	W1 = totalDataTime / n1Packages;
+	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
+
 	X1 = totalX1 / n1Packages;
 	// Estatísticas dos pacotes de voz
 	Nq2 = totalVoiceTime / totalTime;
@@ -152,7 +160,8 @@ void incrementJitter(int channel, double currentTime) {
  */
 void resetStats() {
 	serverOccupied = EventType::EMPTY;
-	JitterMean = JitterVariance = n1Packages = n2Packages = n2Intervals = jitterAcc = jitterAccSqr = 0;
+	JitterMean = JitterVariance = n1Packages = n2Packages = n2Intervals = 0;
+	jitterAcc = jitterAccSqr = 0;
 	totalTime = totalDataTime = totalVoiceTime = 0.0;
 
 	for (int i = 0; i < VOICE_CHANNELS; i++) {
@@ -164,6 +173,9 @@ void resetStats() {
  * Imprime em stdout o valor das estatísticas globais: E[T1], E[W1], E[X1], E[Nq1], E[T2], E[W2], E[X2], E[Nq2], E[Δ] e V(Δ)
  */
 void printStats() {
+    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
+	cout << "lambda: " << n1Packages / max_time << " pacotes/seg" << endl;
+	cout << "Max Time: " << max_time << endl;
 	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << ", E[T2]: " << W2 + X2 << ", E[W2]: " << W2 <<
 		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
@@ -179,48 +191,43 @@ int main(int argc, char *argv[]) {
 	for (int j = 0; j < SIMULATIONS; ++j) {
 		resetStats();
 		double lastTime = 0;
+		double lastArrivalTime = 0;
 		for (int i = 0; i < SAMPLES; ++i) {
 			Event arrival = arrivals.top();
+//			cout << "!! Time: " << arrival.time << (arrival.type == EventType::DATA ? " (Data)" : " (Server)") << endl;
 			arrivals.pop();
 			double t;
 			registerAreaStatistics(voice.size(), serverOccupied == EventType::DATA ? data.size() - 1 : data.size(), lastTime, arrival.time);
+
+//            cout << "Instante " << arrival.time << "s" << endl;
+//            cout << "Filas:" << endl << "> Dados: " << data.size() - 1 << endl << "> Voz: " << voice.size() - 1 << endl << endl;
+
+			max_time = arrival.time;
+			lastTime = arrival.time;
+
 			switch (arrival.type) {
 				case EventType::DATA:
-					// Configura o tempo de serviço do pacote e coloca o mesmo na fila
+                    // Configura o tempo de serviço do pacote e coloca o mesmo na fila
 					arrival.stats->serviceTime = DATA_TIME_OF_SERVICE;
 					arrival.stats->enterQueueTime = arrival.time;
 					data.push(arrival);
+					aux_tempo_entre_chegadas += arrival.time - lastArrivalTime;
+					lastArrivalTime = arrival.time;
+//					cout << "Tempo entre chegadas: " << aux_tempo_entre_chegadas << " ~ " << arrival.time - lastTime << endl;
 
-					// Coloca a próxima chegada de pacote de dados na fila de eventos
+                    // Coloca a próxima chegada de pacote de dados na fila de eventos
+//                    cout << "> Gerado novo pacote de dados chegando em: " << arrival.time + DATA_ARRIVAL_TIME << endl;
+//					cout << "K~ " << arrivals.top().time << " ~";
 					arrivals.emplace(arrival.time + DATA_ARRIVAL_TIME, EventType::DATA);
+//					cout << "K~ " << arrivals.top().time << " ~";
 
 					if (serverOccupied == EventType::EMPTY) {
-						serveEvent(arrival, arrivals, arrival.time);
+                        serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::DATA;
 					}
 					break;
-				case EventType::VOICE:
-					// Coloca a próxima chegada do canal na heap de eventos
-					t = arrival.time + VOICE_ARRIVAL_TIME;
-					if (genEndOfActivePeriod()) {
-						t += VOICE_SILENCE_TIME;
-						arrival.stats->lastVoicePackage = true;
-					}
-					arrivals.emplace(t, EventType::VOICE, new Stats(arrival.stats->channel, VOICE_TIME_OF_SERVICE));
-
-					if (serverOccupied == EventType::EMPTY) {
-						serveEvent(arrival, arrivals, arrival.time);
-						serverOccupied = EventType::VOICE;
-					} else if (PREEMPTION && serverOccupied == EventType::DATA) {
-						interruptedDataPackages++;
-						data.front().stats->enterQueueTime = arrival.time; // Necessário para contar o tempo que o pacote passou na fila
-						serveEvent(arrival, arrivals, arrival.time);
-						serverOccupied = EventType::VOICE;
-					} else {
-						voice.push(arrival);
-					}
-					break;
 				case EventType::SERVER:
+//				    cout << "Server ocupado!" << endl;
 					switch (serverOccupied) {
 						case EventType::VOICE :
 							incrementJitter(arrival.stats->channel, arrival.time);
@@ -231,8 +238,14 @@ int main(int argc, char *argv[]) {
 							}
 							break;
 						case EventType::DATA :
-							if (interruptedDataPackages) interruptedDataPackages--;
-							else data.pop();
+							if (interruptedDataPackages) {
+							    interruptedDataPackages--;
+							}
+							else {
+								n1Packages += 1;
+								serverOccupied = EventType::EMPTY;
+							    data.pop();
+							}
 							break;
 						default:
 							return INVALID_SERVICE_TYPE; //ERRO!!!

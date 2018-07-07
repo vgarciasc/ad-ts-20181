@@ -19,7 +19,7 @@ Event::Event(double time, EventType type) {
 
 bool
 operator<(const Event lhs, const Event rhs) {
-	return lhs.time < rhs.time;
+	return rhs.time < lhs.time;
 }
 
 //Event::Event(double time, double serviceTime, EventType type, int channel) {
