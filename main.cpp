@@ -205,7 +205,48 @@ void printStats() {
 		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
 
+/**
+-  * Imprime texto de ajuda para mostrar as opÃ§Ãµes a serem passadas para o programa
+-  */
+void printHelp(){
+	cout << "UTILIZAÃ‡ÃƒO:" << endl;
+	cout << "_exe_ [OPTIONS]" << endl;
+	cout << "\t-h\t\tMostra essa ajuda" << endl;
+	cout << "\t-a int\tNÃºmero de amostras" << endl;
+	cout << "\t-s int\tNÃºmero de rodadas de simulaÃ§Ã£o" << endl;
+	cout << "\t-u double\tUtilizaÃ§Ã£o da fila 1" << endl;
+	cout << "\t-p\tFila de dados pode ser interrompida ()" << endl;
+}
+
 int main(int argc, char *argv[]) {
+	for (int p = 0; p < argc; ++p) {
+    	string option = argv[p];
+    	if (option[0] != '-') {
+    		cout << "OpÃ§Ã£o " << argv[p] << " invÃ¡lida" << endl;
+    		continue;
+    	}
+    	switch (option[1]) {
+    		case 'a': //NÃºmero de amostras
+    			SAMPLES = stoi(argv[++p]);
+    			break;
+    		case 'p': // Com ou sem preempÃ§Ã£o
+    			PREEMPTION = true;
+    			break;
+    		case 'r': // NÃºmero de rodadas de simulaÃ§Ã£o
+    			SIMULATIONS = stoi(argv[++p]);
+    			break;
+    		case 'u': // UtilizaÃ§Ã£o da fila de dados
+    			UTILIZATION_1 = stod(argv[++p]);
+    			DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
+    			break;
+    		case 'h':
+    			printHelp();
+    			return 0;
+    		default:
+    			cout << "OpÃ§Ã£o " << argv[p] << " invÃ¡lida" << endl;
+    			continue;
+    	}
+    }
 	// Filas e variáveis de controle
 	priority_queue<Event> arrivals; // Estrutura para organizar as chegadas
 	queue<Event> data, voice; // Filas de data e voz
