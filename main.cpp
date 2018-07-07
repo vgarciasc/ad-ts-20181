@@ -2,7 +2,6 @@
 #include <queue>
 #include <random>
 #include <functional>
-#include <cstring>
 #include "Event.h"
 
 using namespace std;
@@ -14,28 +13,38 @@ int SIMULATIONS = 1;
 bool PREEMPTION = false;
 double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
+enum SimulationEvent {
+	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
+};
 EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servidor
 
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-	return 755;
-	// static auto engine = default_random_engine{1};
-	// static uniform_real_distribution dist{0.0, 1.0};
-	// double x = dist(engine);
+//	return 755;
+	 static auto engine = default_random_engine{1};
+	 static uniform_real_distribution dist{0.0, 1.0};
+	 double x = dist(engine);
 
-	// if (x < .3)
-	// 	return 64;
-	// else if (x < .4)
-	// 	return 512;
-	// else if (x < .7)
-	// 	return 1500;
-	// else
-	// 	// TODO corrigir probabilidade das pontas
-	// 	return (x - .7) * 1436 / .3 + 64;
+	 if (x < .3)
+	 	return 64;
+	 else if (x < .4)
+	 	return 512;
+	 else if (x < .7)
+	 	return 1500;
+	 else
+	 	// TODO corrigir probabilidade das pontas
+	 	return (x - .7) * 1436 / .3 + 64;
 }
 
-auto genDataServiceTime = []() { return genDataPackageSize() * 8 / SERVER_SPEED; };
+int largura_dados_acc = 0;
+int quantidade_largura_dados_calculados = 0;
+auto genDataServiceTime = []() {
+	quantidade_largura_dados_calculados++;
+	int aux = genDataPackageSize();
+	largura_dados_acc += aux;
+	return aux * 8 / SERVER_SPEED;
+};
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
 double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
@@ -183,48 +192,7 @@ void printStats() {
 		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
 
-/**
- * Imprime texto de ajuda para mostrar as opções a serem passadas para o programa
- */
-void printHelp(){
-	cout << "UTILIZAÇÃO:" << endl;
-	cout << "_exe_ [OPTIONS]" << endl;
-	cout << "\t-h\t\tMostra essa ajuda" << endl;
-	cout << "\t-a int\tNúmero de amostras" << endl;
-	cout << "\t-s int\tNúmero de rodadas de simulação" << endl;
-	cout << "\t-u double\tUtilização da fila 1" << endl;
-	cout << "\t-p\tFila de dados pode ser interrompida ()" << endl;
-}
-
 int main(int argc, char *argv[]) {
-	for (int p = 0; p < argc; ++p) {
-		string option = argv[p];
-		if (option[0] != '-') {
-			cout << "Opção " << argv[p] << " inválida" << endl;
-			continue;
-		}
-		switch (option[1]) {
-			case 'a': //Número de amostras
-				SAMPLES = stoi(argv[++p]);
-				break;
-			case 'p': // Com ou sem preempção
-				PREEMPTION = true;
-				break;
-			case 'r': // Número de rodadas de simulação
-				SIMULATIONS = stoi(argv[++p]);
-				break;
-			case 'u': // Utilização da fila de dados
-				UTILIZATION_1 = stod(argv[++p]);
-				DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
-				break;
-			case 'h':
-				printHelp();
-				return 0;
-			default:
-				cout << "Opção " << argv[p] << " inválida" << endl;
-				continue;
-		}
-	}
 	// Filas e variáveis de controle
 	priority_queue<Event> arrivals; // Estrutura para organizar as chegadas
 	queue<Event> data, voice; // Filas de data e voz
