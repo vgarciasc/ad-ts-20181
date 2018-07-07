@@ -8,11 +8,11 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-const int SAMPLES = 10000;
+const int SAMPLES = 1000000;
 const int SIMULATIONS = 1;
 const bool PREEMPTION = true;
-const double UTILIZATION_1 = 0.1; //ρ1
-constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
+const double UTILIZATION_1 = 0; //ρ1
+constexpr double SERVER_SPEED = 2.5e4; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
 };
@@ -52,7 +52,7 @@ auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, defa
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
-const int VOICE_CHANNELS = 0;
+const int VOICE_CHANNELS = 1;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
@@ -62,7 +62,7 @@ const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
 // Voice channel random variable generators
 auto genEndOfActivePeriod = bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{2}); // Returns true when the voice channel enters a silence period after a voice package arrival
 auto genSilencePeriod = bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{3});
-#define VOICE_SILENCE_TIME genSilencePeriod()
+#define VOICE_SILENCE_TIME 0.045
 
 // Códigos de erro
 const int INVALID_SERVICE_TYPE = 1;
@@ -139,23 +139,28 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
 void calculateAreaStatistics() {
 	// Estatísticas dos dados
 	cout << "Total Data Time: " << totalDataTime << ", Total Time: " << totalTime << endl;
-	Nq1 = totalDataTime / totalTime;
-	W1 = totalDataTime / n1Packages;
+	Nq1 = totalDataTime == 0 ? 0 : totalDataTime / totalTime;
+	W1 = totalDataTime == 0 ? 0 : totalDataTime / n1Packages;
 //	cout << "Total W1: " << totalDataTime << ", n1Packages: " << n1Packages << endl;
 //	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
 
-	X1 = totalX1 / n1Packages;
+	X1 = totalX1 == 0 ? 0 : totalX1 / n1Packages;
 	// Estatísticas dos pacotes de voz
-	Nq2 = totalVoiceTime / totalTime;
-	W2 = totalVoiceTime / n2Packages;
-	JitterMean = jitterAcc / n2Intervals;
-	JitterVariance = (jitterAccSqr * n2Intervals - jitterAcc * jitterAcc) / (n2Intervals * (n2Intervals - 1));
+
+	cout << "Total Voice Time: " << totalVoiceTime << ", Total Time: " << totalTime << endl;
+	cout << "n2Packages: " << n2Packages << endl;
+	Nq2 = totalVoiceTime == 0 ? 0 : totalVoiceTime / totalTime;
+	W2 = totalVoiceTime == 0 ? 0 : totalVoiceTime / n2Packages;
+
+	JitterMean = jitterAcc == 0 ? 0 : jitterAcc / n2Intervals;
+	JitterVariance = (jitterAcc == 0 || jitterAccSqr == 0 || n2Intervals == 0)? 0 :
+			(jitterAccSqr * n2Intervals - jitterAcc * jitterAcc) / (n2Intervals * (n2Intervals - 1));
 	//X2 constante
 }
 
 void incrementJitter(int channel, double currentTime) {
 	double lastDeparture = channelsLastDeparture[channel];
-	double lastInterval = lastDeparture - currentTime;
+	double lastInterval = currentTime - lastDeparture;
 
 	if (lastDeparture != -1) {
 		jitterAcc += lastInterval;
@@ -163,6 +168,8 @@ void incrementJitter(int channel, double currentTime) {
 		n2Intervals += 1;
 	}
 }
+
+int activePeriodLength[VOICE_CHANNELS];
 
 /**
  * Coloca o valor de todas as variáveis usadas para as estatísticas em zero para evitar
@@ -175,6 +182,10 @@ void resetStats() {
 
 	for (int i = 0; i < VOICE_CHANNELS; i++) {
 		channelsLastDeparture[i] = -1;
+	}
+
+	for (int i = 0; i < VOICE_CHANNELS; i++) {
+		activePeriodLength[i] = 0;
 	}
 }
 
@@ -204,6 +215,8 @@ int main(int argc, char *argv[]) {
 		double lastTime = 0;
 		double lastArrivalTime = 0;
 		for (int i = 0; i < SAMPLES; ++i) {
+//			getchar();
+
 //			if (i % (SAMPLES / 20) == 0) cout << (i * 100 / SAMPLES) << "%" << endl;
 			Event arrival = arrivals.top();
 //			cout << "!! Time: " << arrival.time << (arrival.type == EventType::DATA ? " (Data)" : " (Server)") << endl;
@@ -212,7 +225,7 @@ int main(int argc, char *argv[]) {
 			registerAreaStatistics(voice.size(), serverOccupied == EventType::DATA ? data.size() - 1 : data.size(), lastTime, arrival.time);
 
 //            cout << "Instante " << arrival.time << "s" << endl;
-//            cout << "Filas:" << endl << "> Dados: " << data.size() - 1 << endl << "> Voz: " << voice.size() - 1 << endl << endl;
+//            cout << "Filas:" << endl << "> Dados: " << (data.size() == 0 ? 0 : data.size() - 1) << endl << "> Voz: " << (voice.size() == 0 ? 0 : voice.size() - 1) << endl << endl;
 
 			max_time = arrival.time;
 			lastTime = arrival.time;
@@ -240,19 +253,30 @@ int main(int argc, char *argv[]) {
 					}
 					break;
 				case EventType::VOICE:
-					// Coloca a prÃ³xima chegada do canal na heap de eventos
+//					cout << "Chegada de Pacote de Voz (" << (activePeriodLength[arrival.stats->channel] + 1) << "º do periodo ativo)" << endl;
+					// Coloca a próxima chegada do canal na heap de eventos
 					t = arrival.time + VOICE_ARRIVAL_TIME;
-					if (genEndOfActivePeriod()) {
+//					if (genEndOfActivePeriod()) {
+//						t += VOICE_SILENCE_TIME;
+//						arrival.stats->lastVoicePackage = true;
+//					}
+
+					if (activePeriodLength[arrival.stats->channel] < 4) {
+						activePeriodLength[arrival.stats->channel]++;
+					} else {
 						t += VOICE_SILENCE_TIME;
 						arrival.stats->lastVoicePackage = true;
+						activePeriodLength[arrival.stats->channel] = 0;
 					}
+
+					n2Packages++;
 					arrivals.emplace(t, EventType::VOICE, new Stats(arrival.stats->channel, VOICE_TIME_OF_SERVICE));
 					if (serverOccupied == EventType::EMPTY) {
 						serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::VOICE;
 					} else if (PREEMPTION && serverOccupied == EventType::DATA) {
 						interruptedDataPackages++;
-						data.front().stats->enterQueueTime = arrival.time; // NecessÃ¡rio para contar o tempo que o pacote passou na fila
+						data.front().stats->enterQueueTime = arrival.time; // Necessário para contar o tempo que o pacote passou na fila
 						serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::VOICE;
 					} else {
@@ -263,6 +287,7 @@ int main(int argc, char *argv[]) {
 //				    cout << "Server ocupado!" << endl;
 					switch (serverOccupied) {
 						case EventType::VOICE :
+//							cout << "Saída de Pacote de Voz" << endl;
 							incrementJitter(arrival.stats->channel, arrival.time);
 							if (!arrival.stats->lastVoicePackage) {
 								channelsLastDeparture[arrival.stats->channel] = arrival.time;
@@ -286,6 +311,7 @@ int main(int argc, char *argv[]) {
 					delete arrival.stats; // Controle de memória
 					serverOccupied = serveNextEvent(arrivals, voice, data, arrival.time);
 					break;
+					cout << "==============" << endl;
 				default:
 					return INVALID_EVENT_ARRIVAL;
 			}
