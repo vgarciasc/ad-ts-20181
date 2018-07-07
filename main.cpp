@@ -8,11 +8,11 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-const int SAMPLES = 1000000;
-const int SIMULATIONS = 1;
-const bool PREEMPTION = true;
-const double UTILIZATION_1 = 0; //ρ1
-constexpr double SERVER_SPEED = 2.5e4; //2Mb/segundo
+int SAMPLES = 1000000;
+int SIMULATIONS = 1;
+bool PREEMPTION = false;
+double UTILIZATION_1 = 0.1; //ρ1
+constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
 };
@@ -47,8 +47,13 @@ auto genDataServiceTime = []() {
 };
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
-const double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
-auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, default_random_engine{4});
+double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
+double genDataArrivalTime(){
+	 static auto engine = default_random_engine{4};
+	 static exponential_distribution dist{DATA_ARRIVAL_RATE};
+	 return dist(engine);
+}
+//auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, default_random_engine{4});
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
@@ -193,13 +198,11 @@ void resetStats() {
  * Imprime em stdout o valor das estatísticas globais: E[T1], E[W1], E[X1], E[Nq1], E[T2], E[W2], E[X2], E[Nq2], E[Δ] e V(Δ)
  */
 void printStats() {
-//	cout << "Largura Media: " << largura_dados_acc / quantidade_largura_dados_calculados << endl;
-//    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
+    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
 	cout << "lambda: " << n1Packages / max_time << " pacotes/seg" << endl;
-
 	cout << "Max Time: " << max_time << endl;
-	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << endl;
-	cout << "E[T2]: " << W2 + X2 << ", E[W2]: " << W2 << ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
+	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << ", E[T2]: " << W2 + X2 << ", E[W2]: " << W2 <<
+		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -229,7 +232,6 @@ int main(int argc, char *argv[]) {
 
 			max_time = arrival.time;
 			lastTime = arrival.time;
-			totalTime = arrival.time;
 
 			switch (arrival.type) {
 				case EventType::DATA:
