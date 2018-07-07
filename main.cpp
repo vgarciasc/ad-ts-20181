@@ -8,10 +8,10 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-int SAMPLES = 1000000;
+int SAMPLES = 10000;
 int SIMULATIONS = 1;
 bool PREEMPTION = false;
-double UTILIZATION_1 = 0; //ρ1
+double UTILIZATION_1 = 0.5; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -21,8 +21,8 @@ EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servi
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-//	return 755;
-	 static auto engine = default_random_engine{1};
+     random_device rd;
+	 static auto engine = default_random_engine{ rd() };
 	 static uniform_real_distribution dist{0.0, 1.0};
 	 double x = dist(engine);
 
@@ -57,17 +57,23 @@ double genDataArrivalTime(){
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
-const int VOICE_CHANNELS = 1;
+const int VOICE_CHANNELS = 2;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
-const int VOICE_PACKAGE_SIZE_IN_BITS = 40000; //bits
+const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
 const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
 
 // Voice channel random variable generators
-auto genEndOfActivePeriod = bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{2}); // Returns true when the voice channel enters a silence period after a voice package arrival
-auto genSilencePeriod = bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{3});
-#define VOICE_SILENCE_TIME 0.045
+auto genEndOfActivePeriod = []() {
+    random_device rd;
+    return bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{ rd() })();
+};
+auto genSilencePeriod = []() {
+    random_device rd;
+    return bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{ rd() })();
+};
+#define VOICE_SILENCE_TIME genSilencePeriod()
 
 // Códigos de erro
 const int INVALID_SERVICE_TYPE = 1;
@@ -130,6 +136,9 @@ EventType serveNextEvent(priority_queue<Event> &events_queue, queue<Event> &voic
 
 int n1Packages, n2Packages, n2Intervals;
 double totalDataTime, totalVoiceTime, totalX1, totalTime, jitterAcc, jitterAccSqr;
+
+double voiceSilenceTotalTime = 0;
+int voiceSilenceTotalTimeGenerated = 0;
 
 void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime) {
 	// Add nq1, nq2, w1, w2 and x1
@@ -198,7 +207,8 @@ void resetStats() {
  * Imprime em stdout o valor das estatísticas globais: E[T1], E[W1], E[X1], E[Nq1], E[T2], E[W2], E[X2], E[Nq2], E[Δ] e V(Δ)
  */
 void printStats() {
-    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
+	cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
+	cout << "Voice Silence Media: " << (voiceSilenceTotalTime / voiceSilenceTotalTimeGenerated) << endl;
 	cout << "lambda_1: " << n1Packages / max_time << " pacotes dados/seg" << endl;
 	cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "Max Time: " << max_time << endl;
@@ -268,6 +278,7 @@ int main(int argc, char *argv[]) {
 //			cout << "!! Time: " << arrival.time << (arrival.type == EventType::DATA ? " (Data)" : " (Server)") << endl;
 			arrivals.pop();
 			double t;
+			double aux_silence = 0;
 			registerAreaStatistics(voice.size(), serverOccupied == EventType::DATA ? data.size() - 1 : data.size(), lastTime, arrival.time);
 
 //            cout << "Instante " << arrival.time << "s" << endl;
@@ -307,13 +318,21 @@ int main(int argc, char *argv[]) {
 //						arrival.stats->lastVoicePackage = true;
 //					}
 
-					if (activePeriodLength[arrival.stats->channel] < 4) {
-						activePeriodLength[arrival.stats->channel]++;
-					} else {
-						t += VOICE_SILENCE_TIME;
-						arrival.stats->lastVoicePackage = true;
-						activePeriodLength[arrival.stats->channel] = 0;
-					}
+//					cout << "SILENCE! " << aux_silence << endl;
+//					cout << "ACTIVE PERIOD! " << VOICE_SILENCE_TIME << endl;
+//					voiceSilenceTotalTime += VOICE_SILENCE_TIME;
+//					voiceSilenceTotalTimeGenerated++;
+
+//					t += VOICE_SILENCE_TIME;
+//					arrival.stats->lastVoicePackage = true;
+
+//					if (activePeriodLength[arrival.stats->channel] < 4) {
+//						activePeriodLength[arrival.stats->channel]++;
+//					} else {
+//						t += VOICE_SILENCE_TIME;
+//						arrival.stats->lastVoicePackage = true;
+//						activePeriodLength[arrival.stats->channel] = 0;
+//					}
 
 					n2Packages++;
 					arrivals.emplace(t, EventType::VOICE, new Stats(arrival.stats->channel, VOICE_TIME_OF_SERVICE));
