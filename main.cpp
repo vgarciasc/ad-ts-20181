@@ -50,6 +50,7 @@ const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
 const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
+
 // Voice channel random variable generators
 auto genEndOfActivePeriod = bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{2}); // Returns true when the voice channel enters a silence period after a voice package arrival
 auto genSilencePeriod = bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{3});
@@ -62,6 +63,7 @@ const int INVALID_EVENT_ARRIVAL = 2;
 // Estatísticas
 const double X2 = VOICE_TIME_OF_SERVICE;
 double W1, X1, Nq1, W2, Nq2, JitterMean, JitterVariance;
+double channelsLastDeparture[VOICE_CHANNELS];
 
 //FUNÇÕES
 /**
@@ -97,6 +99,7 @@ void serveEvent(Event event, priority_queue<Event> &events_queue, double current
 EventType serveNextEvent(priority_queue<Event> &events_queue, queue<Event> &voice, queue<Event> &data, double currentTime) {
 	if (!voice.empty()) {
 		serveEvent(voice.front(), events_queue, currentTime);
+		voice.pop();
 		return EventType::VOICE;
 	} else if (!data.empty()) {
 		serveEvent(data.front(), events_queue, currentTime);
@@ -106,8 +109,8 @@ EventType serveNextEvent(priority_queue<Event> &events_queue, queue<Event> &voic
 	}
 }
 
-int n1Packages, n2Packages;
-double totalDataTime, totalVoiceTime, totalX1, totalTime;
+int n1Packages, n2Packages, n2Intervals;
+double totalDataTime, totalVoiceTime, totalX1, totalTime, jitterAcc, jitterAccSqr;
 
 void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime) {
 	// Add nq1, nq2, w1, w2 and x1
@@ -127,7 +130,20 @@ void calculateAreaStatistics() {
 	// Estatísticas dos pacotes de voz
 	Nq2 = totalVoiceTime / totalTime;
 	W2 = totalVoiceTime / n2Packages;
+	JitterMean = jitterAcc / n2Intervals;
+	JitterVariance = (jitterAccSqr * n2Intervals - jitterAcc * jitterAcc) / (n2Intervals * (n2Intervals - 1));
 	//X2 constante
+}
+
+void incrementJitter(int channel, double currentTime) {
+	double lastDeparture = channelsLastDeparture[channel];
+	double lastInterval = lastDeparture - currentTime;
+
+	if (lastDeparture != -1) {
+		jitterAcc += lastInterval;
+		jitterAccSqr += lastInterval * lastInterval;
+		n2Intervals += 1;
+	}
 }
 
 /**
@@ -135,8 +151,12 @@ void calculateAreaStatistics() {
  */
 void resetStats() {
 	serverOccupied = EventType::EMPTY;
-	JitterMean = JitterVariance = n1Packages = n2Packages = 0;
+	JitterMean = JitterVariance = n1Packages = n2Packages = n2Intervals = jitterAcc = jitterAccSqr = 0;
 	totalTime = totalDataTime = totalVoiceTime = 0.0;
+
+	for (int i = 0; i < VOICE_CHANNELS; i++) {
+		channelsLastDeparture[i] = -1;
+	}
 }
 
 /**
@@ -179,14 +199,11 @@ int main(int argc, char *argv[]) {
 					}
 					break;
 				case EventType::VOICE:
-					// Configura o tempo de entrada na fila
-					arrival.stats->enterQueueTime = arrival.time;
-
 					// Coloca a próxima chegada do canal na heap de eventos
 					t = arrival.time + VOICE_ARRIVAL_TIME;
 					if (genEndOfActivePeriod()) {
 						t += VOICE_SILENCE_TIME;
-						//TODO finalizar jitter
+						arrival.stats->lastVoicePackage = true;
 					}
 					arrivals.emplace(t, EventType::VOICE, new Stats(arrival.stats->channel, VOICE_TIME_OF_SERVICE));
 
@@ -196,7 +213,6 @@ int main(int argc, char *argv[]) {
 					} else if (PREEMPION && serverOccupied == EventType::DATA) {
 						interruptedDataPackages++;
 						data.front().stats->enterQueueTime = arrival.time; // Necessário para contar o tempo que o pacote passou na fila
-//                    data.front().stats->wastedServiceTime = data.front().;
 						serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::VOICE;
 					} else {
@@ -206,7 +222,12 @@ int main(int argc, char *argv[]) {
 				case EventType::SERVER:
 					switch (serverOccupied) {
 						case EventType::VOICE :
-//						voice.pop();
+							incrementJitter(arrival.stats->channel, arrival.time);
+							if (!arrival.stats->lastVoicePackage) {
+								channelsLastDeparture[channel] = arrival.time;
+							} else {
+								channelsLastDeparture[channel] = -1;
+							}
 							break;
 						case EventType::DATA :
 							if (interruptedDataPackages) interruptedDataPackages--;
