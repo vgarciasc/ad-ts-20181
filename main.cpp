@@ -8,10 +8,10 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-const int SAMPLES = 1000000;
+const int SAMPLES = 10000;
 const int SIMULATIONS = 1;
 const bool PREEMPTION = true;
-const double UTILIZATION_1 = 0.5; //ρ1
+const double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -21,23 +21,30 @@ EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servi
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-	return 755;
-	// static auto engine = default_random_engine{1};
-	// static uniform_real_distribution dist{0.0, 1.0};
-	// double x = dist(engine);
+//	return 755;
+	 static auto engine = default_random_engine{1};
+	 static uniform_real_distribution dist{0.0, 1.0};
+	 double x = dist(engine);
 
-	// if (x < .3)
-	// 	return 64;
-	// else if (x < .4)
-	// 	return 512;
-	// else if (x < .7)
-	// 	return 1500;
-	// else
-	// 	// TODO corrigir probabilidade das pontas
-	// 	return (x - .7) * 1436 / .3 + 64;
+	 if (x < .3)
+	 	return 64;
+	 else if (x < .4)
+	 	return 512;
+	 else if (x < .7)
+	 	return 1500;
+	 else
+	 	// TODO corrigir probabilidade das pontas
+	 	return (x - .7) * 1436 / .3 + 64;
 }
 
-auto genDataServiceTime = []() { return genDataPackageSize() * 8 / SERVER_SPEED; };
+int largura_dados_acc = 0;
+int quantidade_largura_dados_calculados = 0;
+auto genDataServiceTime = []() {
+	quantidade_largura_dados_calculados++;
+	int aux = genDataPackageSize();
+	largura_dados_acc += aux;
+	return aux * 8 / SERVER_SPEED;
+};
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
 const double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
@@ -131,9 +138,11 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
 
 void calculateAreaStatistics() {
 	// Estatísticas dos dados
+	cout << "Total Data Time: " << totalDataTime << ", Total Time: " << totalTime << endl;
 	Nq1 = totalDataTime / totalTime;
 	W1 = totalDataTime / n1Packages;
-	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
+//	cout << "Total W1: " << totalDataTime << ", n1Packages: " << n1Packages << endl;
+//	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
 
 	X1 = totalX1 / n1Packages;
 	// Estatísticas dos pacotes de voz
@@ -173,11 +182,13 @@ void resetStats() {
  * Imprime em stdout o valor das estatísticas globais: E[T1], E[W1], E[X1], E[Nq1], E[T2], E[W2], E[X2], E[Nq2], E[Δ] e V(Δ)
  */
 void printStats() {
-    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
+//	cout << "Largura Media: " << largura_dados_acc / quantidade_largura_dados_calculados << endl;
+//    cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
 	cout << "lambda: " << n1Packages / max_time << " pacotes/seg" << endl;
+
 	cout << "Max Time: " << max_time << endl;
-	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << ", E[T2]: " << W2 + X2 << ", E[W2]: " << W2 <<
-		 ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
+	cout << "E[T1]: " << W1 + X1 << ", E[W1]: " << W1 << ", E[X1]: " << X1 << ", E[Nq1]: " << Nq1 << endl;
+	cout << "E[T2]: " << W2 + X2 << ", E[W2]: " << W2 << ", E[X2]: " << X2 << ", E[Nq2]: " << Nq2 << ", E[Δ]; " << JitterMean << ", V(Δ):" << JitterVariance << endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -193,6 +204,7 @@ int main(int argc, char *argv[]) {
 		double lastTime = 0;
 		double lastArrivalTime = 0;
 		for (int i = 0; i < SAMPLES; ++i) {
+//			if (i % (SAMPLES / 20) == 0) cout << (i * 100 / SAMPLES) << "%" << endl;
 			Event arrival = arrivals.top();
 //			cout << "!! Time: " << arrival.time << (arrival.type == EventType::DATA ? " (Data)" : " (Server)") << endl;
 			arrivals.pop();
@@ -204,6 +216,7 @@ int main(int argc, char *argv[]) {
 
 			max_time = arrival.time;
 			lastTime = arrival.time;
+			totalTime = arrival.time;
 
 			switch (arrival.type) {
 				case EventType::DATA:
@@ -224,6 +237,26 @@ int main(int argc, char *argv[]) {
 					if (serverOccupied == EventType::EMPTY) {
                         serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::DATA;
+					}
+					break;
+				case EventType::VOICE:
+					// Coloca a prÃ³xima chegada do canal na heap de eventos
+					t = arrival.time + VOICE_ARRIVAL_TIME;
+					if (genEndOfActivePeriod()) {
+						t += VOICE_SILENCE_TIME;
+						arrival.stats->lastVoicePackage = true;
+					}
+					arrivals.emplace(t, EventType::VOICE, new Stats(arrival.stats->channel, VOICE_TIME_OF_SERVICE));
+					if (serverOccupied == EventType::EMPTY) {
+						serveEvent(arrival, arrivals, arrival.time);
+						serverOccupied = EventType::VOICE;
+					} else if (PREEMPTION && serverOccupied == EventType::DATA) {
+						interruptedDataPackages++;
+						data.front().stats->enterQueueTime = arrival.time; // NecessÃ¡rio para contar o tempo que o pacote passou na fila
+						serveEvent(arrival, arrivals, arrival.time);
+						serverOccupied = EventType::VOICE;
+					} else {
+						voice.push(arrival);
 					}
 					break;
 				case EventType::SERVER:
