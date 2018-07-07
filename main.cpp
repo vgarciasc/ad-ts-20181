@@ -10,7 +10,7 @@ using namespace std;
 // Parâmetros da simulação
 const int SAMPLES = 1;
 const int SIMULATIONS = 1;
-const bool PREEMPION = true;
+const bool PREEMPTION = true;
 const double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
@@ -210,7 +210,7 @@ int main(int argc, char *argv[]) {
 					if (serverOccupied == EventType::EMPTY) {
 						serveEvent(arrival, arrivals, arrival.time);
 						serverOccupied = EventType::VOICE;
-					} else if (PREEMPION && serverOccupied == EventType::DATA) {
+					} else if (PREEMPTION && serverOccupied == EventType::DATA) {
 						interruptedDataPackages++;
 						data.front().stats->enterQueueTime = arrival.time; // Necessário para contar o tempo que o pacote passou na fila
 						serveEvent(arrival, arrivals, arrival.time);
@@ -224,9 +224,9 @@ int main(int argc, char *argv[]) {
 						case EventType::VOICE :
 							incrementJitter(arrival.stats->channel, arrival.time);
 							if (!arrival.stats->lastVoicePackage) {
-								channelsLastDeparture[channel] = arrival.time;
+								channelsLastDeparture[arrival.stats->channel] = arrival.time;
 							} else {
-								channelsLastDeparture[channel] = -1;
+								channelsLastDeparture[arrival.stats->channel] = -1;
 							}
 							break;
 						case EventType::DATA :
