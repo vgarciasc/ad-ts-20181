@@ -8,7 +8,7 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-const int SAMPLES = 1;
+const int SAMPLES = 10;
 const int SIMULATIONS = 1;
 const bool PREEMPTION = true;
 const double UTILIZATION_1 = 0.1; //ρ1
@@ -21,19 +21,20 @@ EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servi
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-	static auto engine = default_random_engine{1};
-	static uniform_real_distribution dist{0.0, 1.0};
-	double x = dist(engine);
+	return 755;
+	// static auto engine = default_random_engine{1};
+	// static uniform_real_distribution dist{0.0, 1.0};
+	// double x = dist(engine);
 
-	if (x < .3)
-		return 64;
-	else if (x < .4)
-		return 512;
-	else if (x < .7)
-		return 1500;
-	else
-		// TODO corrigir probabilidade das pontas
-		return (x - .7) * 1436 / .3 + 64;
+	// if (x < .3)
+	// 	return 64;
+	// else if (x < .4)
+	// 	return 512;
+	// else if (x < .7)
+	// 	return 1500;
+	// else
+	// 	// TODO corrigir probabilidade das pontas
+	// 	return (x - .7) * 1436 / .3 + 64;
 }
 
 auto genDataServiceTime = []() { return genDataPackageSize() * 8 / SERVER_SPEED; };
@@ -44,7 +45,7 @@ auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, defa
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
-const int VOICE_CHANNELS = 30;
+const int VOICE_CHANNELS = 0;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
