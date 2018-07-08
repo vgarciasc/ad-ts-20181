@@ -37,7 +37,7 @@ int genDataPackageSize() {
 	 	return 1500;
 	 else
 	 	// TODO corrigir probabilidade das pontas
-	 	return (x - .7) * 1436 / .3 + 64;
+	 	return genRandUnitary() * 1436 + 64;
 }
 
 auto genDataServiceTime = []() {
@@ -225,6 +225,7 @@ void printHelp(){
 
 int main(int argc, char *argv[]) {
     srand(time(0));
+    double media = 0;
 
 	for (int p = 0; p < argc; ++p) {
     	string option = argv[p];
