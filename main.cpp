@@ -8,10 +8,10 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-int SAMPLES = 10000;
+int SAMPLES = 1000000;
 int SIMULATIONS = 1;
 bool PREEMPTION = false;
-double UTILIZATION_1 = 0.5; //ρ1
+double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -21,6 +21,7 @@ EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servi
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
+    return 755;
      random_device rd;
 	 static auto engine = default_random_engine{ rd() };
 	 static uniform_real_distribution dist{0.0, 1.0};
@@ -58,7 +59,7 @@ double genDataArrivalTime(){
 
 //Voice//
 const int VOICE_CHANNELS = 2;
-const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
+const double VOICE_ARRIVAL_TIME = 0; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
@@ -163,7 +164,7 @@ void calculateAreaStatistics() {
 
 	cout << "Total Voice Time: " << totalVoiceTime << ", Total Time: " << totalTime << endl;
 	cout << "n2Packages: " << n2Packages << endl;
-	Nq2 = totalVoiceTime == 0 ? 0 : totalVoiceTime / totalTime;
+	Nq2 = totalVoiceTime == 0 ? 0 : (totalVoiceTime / (totalTime * VOICE_CHANNELS));
 	W2 = totalVoiceTime == 0 ? 0 : totalVoiceTime / n2Packages;
 
 	JitterMean = jitterAcc == 0 ? 0 : jitterAcc / n2Intervals;
@@ -323,8 +324,8 @@ int main(int argc, char *argv[]) {
 //					voiceSilenceTotalTime += VOICE_SILENCE_TIME;
 //					voiceSilenceTotalTimeGenerated++;
 
-//					t += VOICE_SILENCE_TIME;
-//					arrival.stats->lastVoicePackage = true;
+					t += VOICE_SILENCE_TIME;
+					arrival.stats->lastVoicePackage = true;
 
 //					if (activePeriodLength[arrival.stats->channel] < 4) {
 //						activePeriodLength[arrival.stats->channel]++;
