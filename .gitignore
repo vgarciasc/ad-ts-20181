@@ -412,15 +412,15 @@ venv.bak/
 # sftp configuration file
 sftp-config.json
 
-# Package control specific files
-Package Control.last-run
-Package Control.ca-list
-Package Control.ca-bundle
-Package Control.system-ca-bundle
-Package Control.cache/
-Package Control.ca-certs/
-Package Control.merged-ca-bundle
-Package Control.user-ca-bundle
+# Packet control specific files
+Packet Control.last-run
+Packet Control.ca-list
+Packet Control.ca-bundle
+Packet Control.system-ca-bundle
+Packet Control.cache/
+Packet Control.ca-certs/
+Packet Control.merged-ca-bundle
+Packet Control.user-ca-bundle
 oscrypto-ca-bundle.crt
 bh_unicode_properties.cache
 
@@ -628,7 +628,7 @@ PublishScripts/
 
 # NuGet Packages
 *.nupkg
-# The packages folder can be ignored because of Package Restore
+# The packages folder can be ignored because of Packet Restore
 **/packages/*
 # except build/, which is used as an MSBuild target.
 !**/packages/build/
@@ -649,7 +649,7 @@ rcf/
 # Windows Store app package directories and files
 AppPackages/
 BundleArtifacts/
-Package.StoreAssociation.xml
+Packet.StoreAssociation.xml
 _pkginfo.txt
 
 # Visual Studio cache files
