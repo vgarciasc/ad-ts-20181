@@ -2,13 +2,15 @@
 #include <queue>
 #include <random>
 #include <functional>
+#include <math.h>
+#include <time.h>
 #include "Event.h"
 
 using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-int SAMPLES = 1000000;
+int SAMPLES = 100000;
 int SIMULATIONS = 1;
 bool PREEMPTION = false;
 double UTILIZATION_1 = 0.1; //ρ1
@@ -18,15 +20,15 @@ enum SimulationEvent {
 };
 EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servidor
 
+double genRandUnitary() {
+    return ((double) rand() / RAND_MAX);
+}
+
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-    return 755;
-     random_device rd;
-	 static auto engine = default_random_engine{ rd() };
-	 static uniform_real_distribution dist{0.0, 1.0};
-	 double x = dist(engine);
-
+//    return 755;
+	 double x = genRandUnitary();
 	 if (x < .3)
 	 	return 64;
 	 else if (x < .4)
@@ -38,23 +40,15 @@ int genDataPackageSize() {
 	 	return (x - .7) * 1436 / .3 + 64;
 }
 
-int largura_dados_acc = 0;
-int quantidade_largura_dados_calculados = 0;
 auto genDataServiceTime = []() {
-	quantidade_largura_dados_calculados++;
-	int aux = genDataPackageSize();
-	largura_dados_acc += aux;
-	return aux * 8 / SERVER_SPEED;
+	return genDataPackageSize() * 8 / SERVER_SPEED;
 };
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
 double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
 double genDataArrivalTime(){
-	 static auto engine = default_random_engine{4};
-	 static exponential_distribution dist{DATA_ARRIVAL_RATE};
-	 return dist(engine);
+    return - log(genRandUnitary()) / (DATA_ARRIVAL_RATE);
 }
-//auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, default_random_engine{4});
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
@@ -67,12 +61,10 @@ const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
 
 // Voice channel random variable generators
 auto genEndOfActivePeriod = []() {
-    random_device rd;
-    return bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{ rd() })();
+    return genRandUnitary() < (1.0 / MEAN_N_VOICE_PACKAGE);
 };
 auto genSilencePeriod = []() {
-    random_device rd;
-    return bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{ rd() })();
+    return - log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
 };
 #define VOICE_SILENCE_TIME genSilencePeriod()
 
@@ -232,6 +224,8 @@ void printHelp(){
 }
 
 int main(int argc, char *argv[]) {
+    srand(time(0));
+
 	for (int p = 0; p < argc; ++p) {
     	string option = argv[p];
     	if (option[0] != '-') {
