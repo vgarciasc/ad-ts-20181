@@ -16,7 +16,7 @@ using namespace std;
 int SAMPLES = 100000;
 int SIMULATIONS = 5;
 bool PREEMPTION = false;
-double UTILIZATION_1 = 0; //ρ1
+double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
 enum SimulationEvent {
 	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
@@ -57,8 +57,8 @@ double genDataArrivalTime(){
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
-const int VOICE_CHANNELS = 1;
-const double VOICE_ARRIVAL_TIME = 0.016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
+const int VOICE_CHANNELS = 2;
+const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
@@ -71,8 +71,7 @@ auto genEndOfActivePeriod = []() {
 auto genSilencePeriod = []() {
     return - log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
 };
-//#define VOICE_SILENCE_TIME genSilencePeriod()
-#define VOICE_SILENCE_TIME .045
+#define VOICE_SILENCE_TIME genSilencePeriod()
 
 // Códigos de erro
 const int INVALID_SERVICE_TYPE = 1;
@@ -371,19 +370,19 @@ int main(int argc, char *argv[]) {
 					// Coloca a próxima chegada do canal na heap de eventos
 					t = arrival.time + VOICE_ARRIVAL_TIME;
 //					if (genEndOfActivePeriod()) {
-//						t += VOICE_SILENCE_TIME;
-//						arrival.packet->property.channel.lastVoicePackage = true;
+						t += VOICE_SILENCE_TIME;
+						arrival.packet->property.channel.lastVoicePackage = true;
 //					}
 
 					// DEBUG Para trabalhar com tamanho fixo de pacotes no período ativo
-					if (activePeriodLength[0] < 4) {
-						activePeriodLength[0]++;
-						arrival.packet->property.channel.lastVoicePackage = false;
-					} else {
-						t += VOICE_SILENCE_TIME;
-						arrival.packet->property.channel.lastVoicePackage = true;
-						activePeriodLength[0] = 0;
-					}
+//					if (activePeriodLength[0] < 4) {
+//						activePeriodLength[0]++;
+//						arrival.packet->property.channel.lastVoicePackage = false;
+//					} else {
+//						t += VOICE_SILENCE_TIME;
+//						arrival.packet->property.channel.lastVoicePackage = true;
+//						activePeriodLength[0] = 0;
+//					}
 
 					n2Packages++;
 					arrivals.PUSH(Event)(t, EventType::VOICE, new Packet(s, arrival.packet->property.channel.number, VOICE_TIME_OF_SERVICE))ENDPUSH;
