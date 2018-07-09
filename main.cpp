@@ -23,19 +23,19 @@ using namespace std;
 
 /*PARÂMETROS*/
 // Parâmetros da simulação
-int SAMPLES = 100000; 					// Número de amostras por rodada
-int SIMULATIONS = 5; 					// Número de rodadas de simulação
-bool PREEMPTION = false; 				// Interrupção dos pacotes de dados em caso de chegada de pacote de voz
-double UTILIZATION_1 = 0.1; 			// ρ1 (utilização da fila de dados)
-constexpr double SERVER_SPEED = 2e6; 	// Velocidade do servidor (2Mb/segundo)
-int TRANSIENT_SAMPLE_NUMBER = 0; 		// Amostras colocadas no período transiente
+int SAMPLES = 100000;                    // Número de amostras por rodada
+int SIMULATIONS = 5;                    // Número de rodadas de simulação
+bool PREEMPTION = false;                // Interrupção dos pacotes de dados em caso de chegada de pacote de voz
+double UTILIZATION_1 = 0.1;            // ρ1 (utilização da fila de dados)
+constexpr double SERVER_SPEED = 2e6;    // Velocidade do servidor (2Mb/segundo)
+int TRANSIENT_SAMPLE_NUMBER = 0;        // Amostras colocadas no período transiente
 
 struct SimulationRound {
-	int n1Packages, n2Packages, n2Intervals; 					// Controle do número de pacotes da rodada
-	double  startTime, totalTime, 								// Controle da duração da rodada
-			totalDataTimeInQueue, totalVoiceTimeInQueue, 		// Tempo*Fregueses na fila durante a rodada
-			T1Acc, X1Acc, T2Acc, jitterAcc, jitterAccSqr, 		// Acumulado das estatísticas dos fregueses que chegaram durante a rodada
-			T1, X1, Nq1, T2, Nq2, JitterMean, JitterVariance; 	// Estatísticas finais da rodada
+	int n1Packages, n2Packages, n2Intervals;                    // Controle do número de pacotes da rodada
+	double startTime, totalTime,                                // Controle da duração da rodada
+			totalDataTimeInQueue, totalVoiceTimeInQueue,        // Tempo*Fregueses na fila durante a rodada
+			T1Acc, X1Acc, T2Acc, jitterAcc, jitterAccSqr,        // Acumulado das estatísticas dos fregueses que chegaram durante a rodada
+			T1, X1, Nq1, T2, Nq2, JitterMean, JitterVariance;    // Estatísticas finais da rodada
 };
 
 double genRandUnitary() {
@@ -110,11 +110,14 @@ void setup(priority_queue<Event> &arrivals) {
 	}
 }
 
+/**
+ * Zera todos os parâmetros da rodada de simulação
+ * @param s
+ */
 void setupSimulationStats(SimulationRound &s) {
-	s.JitterMean = s.JitterVariance = s.n1Packages = s.n2Packages = s.n2Intervals = 0;
-	s.jitterAcc = s.jitterAccSqr = 0;
-	s.totalTime = s.totalDataTimeInQueue = s.totalVoiceTimeInQueue = 0.0;
-	s.startTime = 0.0;
+	s.X1Acc = s.T1Acc = s.T2Acc = s.jitterAcc = s.jitterAccSqr =
+			s.startTime = s.totalTime = s.totalDataTimeInQueue = s.totalVoiceTimeInQueue =
+			s.n1Packages = s.n2Packages = s.n2Intervals = 0;
 }
 
 // Colocar eventos na heap
