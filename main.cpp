@@ -11,8 +11,8 @@ using namespace std;
 
 //PARÂMETROS
 // Parâmetros da simulação
-int SAMPLES = 20;
-int SIMULATIONS = 2;
+int SAMPLES = 1000000;
+int SIMULATIONS = 5;
 bool PREEMPTION = false;
 double UTILIZATION_1 = 0.1; //ρ1
 constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
@@ -26,7 +26,7 @@ int TRANSIENT_SAMPLE_NUMBER = 0;
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-	return 755;
+//	return 755;
 	random_device rd;
 	static auto engine = default_random_engine{rd()};
 	static uniform_real_distribution dist{0.0, 1.0};
@@ -63,7 +63,7 @@ double genDataArrivalTime() {
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
-const int VOICE_CHANNELS = 2;
+const int VOICE_CHANNELS = 0;
 const double VOICE_ARRIVAL_TIME = 0; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
@@ -97,6 +97,7 @@ double max_time = 0;
 
 struct SimulationRound {
 	int n1Packages, n2Packages, n2Intervals;
+	double startTime;
 	double totalDataTime, totalVoiceTime, totalX1, totalTime, jitterAcc, jitterAccSqr;
 	double W1, X1, Nq1, W2, Nq2, JitterMean, JitterVariance;
 	double channelsLastDeparture[VOICE_CHANNELS];
@@ -172,20 +173,22 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
 	// Add nq1, nq2, w1, w2 and x1
 	double t = currentTime - lastTime;
 	if (server != nullptr && server->type == PackageType::DATA) {
-		totalX1 += t;
+	    totalX1 += t;
 		Nq1--;
 	}
 	totalDataTime += Nq1 * t;
 	totalVoiceTime += Nq2 * t;
 }
 
-void calculateAreaStatistics(SimulationRound s) {
-	// Estatísticas dos dados
-	cout << "Total Data Time: " << totalDataTime << ", Total Time: " << totalTime << endl;
-	s.Nq1 = totalDataTime == 0 ? 0 : totalDataTime / totalTime;
+void calculateAreaStatistics(SimulationRound &s) {
+	double roundDuration = totalTime - s.startTime;
+
+    // Estatísticas dos dados
+	cout << "Total Data Time: " << totalDataTime << ", Round Duration: " << roundDuration << endl;
+	s.Nq1 = totalDataTime == 0 ? 0 : totalDataTime / roundDuration;
 	s.W1 = totalDataTime == 0 ? 0 : totalDataTime / n1Packages;
 //	cout << "Total W1: " << totalDataTime << ", n1Packages: " << n1Packages << endl;
-//	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
+	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
 
 	s.X1 = totalX1 == 0 ? 0 : totalX1 / n1Packages;
 	// Estatísticas dos pacotes de voz
@@ -217,13 +220,14 @@ void incrementJitter(int channel, double currentTime) {
 void resetStats() {
 	JitterMean = JitterVariance = n1Packages = n2Packages = n2Intervals = 0;
 	jitterAcc = jitterAccSqr = 0;
-	totalTime = totalDataTime = totalVoiceTime = 0.0;
+	totalTime = totalDataTime = totalVoiceTime = totalX1 = 0.0;
 }
 
 void setupSimulationStats(SimulationRound &s) {
 	s.JitterMean = s.JitterVariance = s.n1Packages = s.n2Packages = s.n2Intervals = 0;
 	s.jitterAcc = s.jitterAccSqr = 0;
 	s.totalTime = s.totalDataTime = s.totalVoiceTime = 0.0;
+	s.startTime = 0.0;
 }
 
 /**
@@ -237,6 +241,8 @@ void printStats(SimulationRound &s) {
 	cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "Max Time: " << max_time << endl;
 #endif
+    cout << "lambda_1: " << n1Packages / max_time << " pacotes dados/seg" << endl;
+    cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "E[T1]: " << s.W1 + s.X1 << ", E[W1]: " << s.W1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
 	cout << "E[T2]: " << s.W2 + X2 << ", E[W2]: " << s.W2 <<
 		 /*", E[X2]: " << X2 <<*/ ", E[Nq2]: " << s.Nq2 << ", E[Δ]; " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
@@ -309,6 +315,7 @@ int main(int argc, char *argv[]) {
 	queue<Packet *> data, voice; // Filas de data e voz
 	int interruptedDataPackages = 0; // Pacotes de dados interrompidos (usado para invalidar os respectivos pacotes quando a antiga saída aparecer na lista)
 	SimulationRound rounds[SIMULATIONS]; // Estatísticas das várias rodadas de simulação.
+    double lastTime, lastArrivalTime = 0.0;
 
 	setup(arrivals);
 
@@ -321,18 +328,23 @@ int main(int argc, char *argv[]) {
 	}
 
 	for (int s = 0; s < SIMULATIONS; ++s) {
-		double t, lastTime = 0, lastArrivalTime = 0;
-//		resetStats();
+		double t;
+        rounds[s].startTime = totalTime;
+
+        resetStats();
+
 		for (int i = 0; i < SAMPLES; ++i) {
 #ifdef PROGRESS_BAR
 			if (i % (SAMPLES / 20) == 0) cout << (i * 100 / SAMPLES) << "%" << 'r' << flush;
 #endif
 			Event arrival = arrivals.top();
 			arrivals.pop();
+
 			registerAreaStatistics(voice.size(), data.size(), lastTime, arrival.time);
 			max_time = arrival.time;
 			lastTime = arrival.time;
 			totalTime = arrival.time;
+
 #ifdef LOG
 			cout << "!! Time: " << arrival.time << (arrival.type == EventType::DATA ? " (Data)" : " (Server)") << endl;
 			cout << "Instante " << arrival.time << "s" << endl;
@@ -418,7 +430,7 @@ int main(int argc, char *argv[]) {
 					break;
 			}
 		}
-		calculateAreaStatistics(rounds[s]);
+        calculateAreaStatistics(rounds[s]);
 	}
 
 	for (int i = 0; i < SIMULATIONS; ++i) {
