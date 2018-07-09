@@ -2,6 +2,8 @@
 #include <queue>
 #include <random>
 #include <functional>
+#include <math.h>
+#include <time.h>
 #include "Event.h"
 
 //#define PROGRESS_BAR
@@ -23,43 +25,35 @@ Packet *server;
 //EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servidor
 int TRANSIENT_SAMPLE_NUMBER = 0;
 
+double genRandUnitary() {
+    return ((double) rand() / RAND_MAX);
+}
+
 //Data//
 // Data channel random variable generators
 int genDataPackageSize() {
-//	return 755;
-	random_device rd;
-	static auto engine = default_random_engine{rd()};
-	static uniform_real_distribution dist{0.0, 1.0};
-	double x = dist(engine);
-
-	if (x < .3)
-		return 64;
-	else if (x < .4)
-		return 512;
-	else if (x < .7)
-		return 1500;
-	else
-		// TODO corrigir probabilidade das pontas
-		return (x - .7) * 1436 / .3 + 64;
+//    return 755;
+	 double x = genRandUnitary();
+	 if (x < .3)
+	 	return 64;
+	 else if (x < .4)
+	 	return 512;
+	 else if (x < .7)
+	 	return 1500;
+	 else
+	 	// TODO corrigir probabilidade das pontas
+	 	return genRandUnitary() * 1436 + 64;
 }
 
-int largura_dados_acc = 0;
-int quantidade_largura_dados_calculados = 0;
 auto genDataServiceTime = []() {
-	quantidade_largura_dados_calculados++;
-	int aux = genDataPackageSize();
-	largura_dados_acc += aux;
-	return aux * 8 / SERVER_SPEED;
+	return genDataPackageSize() * 8 / SERVER_SPEED;
 };
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
 double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
-double genDataArrivalTime() {
-	static auto engine = default_random_engine{4};
-	static exponential_distribution dist{DATA_ARRIVAL_RATE};
-	return dist(engine);
+double genDataArrivalTime(){
+    return - log(genRandUnitary()) / (DATA_ARRIVAL_RATE);
 }
-//auto genDataArrivalTime = bind(exponential_distribution{DATA_ARRIVAL_RATE}, default_random_engine{4});
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 //Voice//
@@ -72,12 +66,10 @@ const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
 
 // Voice channel random variable generators
 auto genEndOfActivePeriod = []() {
-	random_device rd;
-	return bind(bernoulli_distribution{1.0 / MEAN_N_VOICE_PACKAGE}, default_random_engine{rd()})();
+    return genRandUnitary() < (1.0 / MEAN_N_VOICE_PACKAGE);
 };
 auto genSilencePeriod = []() {
-	random_device rd;
-	return bind(exponential_distribution{1.0 / MEAN_SILENCE_PERIOD_DURATION}, default_random_engine{rd()})();
+    return - log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
 };
 //#define VOICE_SILENCE_TIME genSilencePeriod()
 #define VOICE_SILENCE_TIME .045
@@ -282,36 +274,36 @@ void countPacketIntoStatistics(Packet *packet, SimulationRound rounds[]) {
 }
 
 int main(int argc, char *argv[]) {
-	// Leitura dos argumentos passados na linha de comando
-	for (int p = 1; p < argc; ++p) {
-		string option = argv[p];
-		if (option[0] != '-') {
-			cout << "Opção " << argv[p] << " inválida" << endl;
-			continue;
-		}
-		switch (option[1]) {
-			case 'a': //Número de amostras
-				SAMPLES = stoi(argv[++p]);
-				break;
-			case 'p': // Com ou sem preempção
-				PREEMPTION = true;
-				break;
-			case 'r': // Número de rodadas de simulação
-				SIMULATIONS = stoi(argv[++p]);
-				break;
-			case 'u': // Utilização da fila de dados
-				UTILIZATION_1 = stod(argv[++p]);
-				DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
-				break;
-			case 'h':
-				printHelp();
-				return 0;
-			default:
-				cout << "Opção " << argv[p] << " inválida" << endl;
-				continue;
-		}
-	}
+    srand(time(0));
 
+	for (int p = 1; p < argc; ++p) {
+    	string option = argv[p];
+    	if (option[0] != '-') {
+    		cout << "Opção " << argv[p] << " inválida" << endl;
+    		continue;
+    	}
+    	switch (option[1]) {
+    		case 'a': //Número de amostras
+    			SAMPLES = stoi(argv[++p]);
+    			break;
+    		case 'p': // Com ou sem preempção
+    			PREEMPTION = true;
+    			break;
+    		case 'r': // Número de rodadas de simulação
+    			SIMULATIONS = stoi(argv[++p]);
+    			break;
+    		case 'u': // Utilização da fila de dados
+    			UTILIZATION_1 = stod(argv[++p]);
+    			DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
+    			break;
+    		case 'h':
+    			printHelp();
+    			return 0;
+    		default:
+    			cout << "Opção " << argv[p] << " inválida" << endl;
+    			continue;
+    	}
+    }
 	// Filas e variáveis de controle
 	priority_queue<Event> arrivals; // Estrutura para organizar as chegadas
 	queue<Packet *> data, voice; // Filas de data e voz
