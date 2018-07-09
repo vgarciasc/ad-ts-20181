@@ -15,13 +15,13 @@ struct ChannelProperties {
 };
 
 union Property {
-	double wastedTime;
+	double wastedTime = 0;
 	ChannelProperties channel;
 };
 
 class Packet {
 public:
-	int simulation = -1;
+	int simulation = 0;
 	double totalTime = 0;
 	double serviceTime = 0;
 	PackageType type;

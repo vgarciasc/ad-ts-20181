@@ -6,43 +6,56 @@
 #include <time.h>
 #include "Event.h"
 
-//#define PROGRESS_BAR
-//#define LOG
+//#define PROGRESS_BAR // Mostra barra de progresso para cada rodada de simulação
+//#define LOG // Coloca alguns outputs a mais para acompanhar valores
+//#define EMPLACE // Melhora o uso de memória (Comentado durante desenvolvimento para melhor uso da IDE)
+
+// Pequeno contorno à diferença entre push e emplace
+#ifdef EMPLACE
+#define PUSH(type) emplace
+#define ENDPUSH
+#else
+#define PUSH(type) push(type
+#define ENDPUSH )
+#endif
 
 using namespace std;
 
-//PARÂMETROS
+/*PARÂMETROS*/
 // Parâmetros da simulação
-int SAMPLES = 100000;
-int SIMULATIONS = 5;
-bool PREEMPTION = false;
-double UTILIZATION_1 = 0.1; //ρ1
-constexpr double SERVER_SPEED = 2e6; //2Mb/segundo
-enum SimulationEvent {
-	DATA_ENTER_QUEUE, DATA_ENTER_SERVER, DATA_LEAVE_SERVER, DATA_INTERRUPTED, VOICE_ENTER_QUEUE, VOICE_ENTER_SERVER, VOICE_LEAVE_SERVER
+int SAMPLES = 100000; 					// Número de amostras por rodada
+int SIMULATIONS = 5; 					// Número de rodadas de simulação
+bool PREEMPTION = false; 				// Interrupção dos pacotes de dados em caso de chegada de pacote de voz
+double UTILIZATION_1 = 0.1; 			// ρ1 (utilização da fila de dados)
+constexpr double SERVER_SPEED = 2e6; 	// Velocidade do servidor (2Mb/segundo)
+int TRANSIENT_SAMPLE_NUMBER = 0; 		// Amostras colocadas no período transiente
+
+struct SimulationRound {
+	int n1Packages, n2Packages, n2Intervals; 					// Controle do número de pacotes da rodada
+	double  startTime, totalTime, 								// Controle da duração da rodada
+			totalDataTimeInQueue, totalVoiceTimeInQueue, 		// Tempo*Fregueses na fila durante a rodada
+			T1Acc, X1Acc, T2Acc, jitterAcc, jitterAccSqr, 		// Acumulado das estatísticas dos fregueses que chegaram durante a rodada
+			T1, X1, Nq1, T2, Nq2, JitterMean, JitterVariance; 	// Estatísticas finais da rodada
 };
-Packet *server;
-//EventType serverOccupied = EventType::EMPTY; // Tipo de evento presente no servidor
-int TRANSIENT_SAMPLE_NUMBER = 0;
 
 double genRandUnitary() {
-    return ((double) rand() / RAND_MAX);
+	return ((double) rand() / RAND_MAX);
 }
 
-//Data//
+/*Data*/
 // Data channel random variable generators
 int genDataPackageSize() {
 //    return 755;
-	 double x = genRandUnitary();
-	 if (x < .3)
-	 	return 64;
-	 else if (x < .4)
-	 	return 512;
-	 else if (x < .7)
-	 	return 1500;
-	 else
-	 	// TODO corrigir probabilidade das pontas
-	 	return genRandUnitary() * 1436 + 64;
+	double x = genRandUnitary();
+	if (x < .3)
+		return 64;
+	else if (x < .4)
+		return 512;
+	else if (x < .7)
+		return 1500;
+	else
+		// TODO corrigir probabilidade das pontas
+		return genRandUnitary() * 1436 + 64;
 }
 
 auto genDataServiceTime = []() {
@@ -51,60 +64,39 @@ auto genDataServiceTime = []() {
 #define DATA_TIME_OF_SERVICE genDataServiceTime()
 
 double DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // λ1 = ρ1/E[X1] = ρ1/(E[L]bytes*8/(2Mb/s))
-double genDataArrivalTime(){
-    return - log(genRandUnitary()) / (DATA_ARRIVAL_RATE);
+double genDataArrivalTime() {
+	return -log(genRandUnitary()) / (DATA_ARRIVAL_RATE);
 }
+
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
-//Voice//
+/*Voice*/
 const int VOICE_CHANNELS = 2;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
-const int VOICE_PACKAGE_SIZE_IN_BITS = 512; //bits
+const int VOICE_PACKAGE_SIZE_IN_BITS = 512;
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
 const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
+const double X2 = VOICE_TIME_OF_SERVICE;
 
 // Voice channel random variable generators
 auto genEndOfActivePeriod = []() {
-    return genRandUnitary() < (1.0 / MEAN_N_VOICE_PACKAGE);
+	return genRandUnitary() < (1.0 / MEAN_N_VOICE_PACKAGE);
 };
 auto genSilencePeriod = []() {
-    return - log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
+	return -log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
 };
 #define VOICE_SILENCE_TIME genSilencePeriod()
 
-// Códigos de erro
-const int INVALID_SERVICE_TYPE = 1;
-const int INVALID_EVENT_ARRIVAL = 2;
-
-// Estatísticas
-const double X2 = VOICE_TIME_OF_SERVICE;
-double W1, X1, Nq1, W2, Nq2, JitterMean, JitterVariance;
+// Variáveis globais
+Packet *server;
+double aux_tempo_entre_chegadas = 0;
+double max_time = 0;
 double channelsLastDeparture[VOICE_CHANNELS];
 int activePeriodLength[VOICE_CHANNELS];
 
-double aux_tempo_entre_chegadas = 0;
-
-double max_time = 0;
-
-struct SimulationRound {
-	int n1Packages, n2Packages, n2Intervals;
-	double startTime;
-	double totalDataTime, totalVoiceTime, totalX1, totalTime, jitterAcc, jitterAccSqr;
-	double W1, X1, Nq1, W2, Nq2, JitterMean, JitterVariance;
-	double channelsLastDeparture[VOICE_CHANNELS];
-};
-
-//#define EMPLACE
-#ifdef EMPLACE
-#define PUSH(type) emplace(
-#define ENDPUSH
-#else
-#define PUSH(type) push(type
-#define ENDPUSH )
-#endif
-
-//FUNÇÕES
+/*FUNÇÕES*/
+// Configurações iniciais
 /**
  * Calcula o tempo da primeira chegada de cada evento e coloca na heap de eventos
  * @param arrivals A heap de eventos
@@ -113,15 +105,19 @@ void setup(priority_queue<Event> &arrivals) {
 	arrivals.PUSH(Event)(DATA_ARRIVAL_TIME, EventType::DATA, new Packet(-1, DATA_TIME_OF_SERVICE))ENDPUSH;
 	for (int i = 0; i < VOICE_CHANNELS; ++i) {
 		arrivals.PUSH(Event)(VOICE_SILENCE_TIME, EventType::VOICE, new Packet(-1, i, VOICE_TIME_OF_SERVICE))ENDPUSH;
-	}
-	for (double &i : channelsLastDeparture) {
-		i = -1;
-	}
-	for (int &i : activePeriodLength) {
-		i = 0;
+		channelsLastDeparture[i] = -1;
+		activePeriodLength[i] = -1;
 	}
 }
 
+void setupSimulationStats(SimulationRound &s) {
+	s.JitterMean = s.JitterVariance = s.n1Packages = s.n2Packages = s.n2Intervals = 0;
+	s.jitterAcc = s.jitterAccSqr = 0;
+	s.totalTime = s.totalDataTimeInQueue = s.totalVoiceTimeInQueue = 0.0;
+	s.startTime = 0.0;
+}
+
+// Colocar eventos na heap
 /**
  * Coloca o evento na fila de eventos esperados com o tempo adequado e dá o valor para a estatísca de tempo de espera
  * @param event Evento a ser servido (tipo VOICE ou DATA)
@@ -155,90 +151,93 @@ Packet *serveNextEvent(priority_queue<Event> &events_queue, queue<Packet *> &voi
 	return nullptr;
 }
 
-int n1Packages, n2Packages, n2Intervals;
-double totalDataTime, totalVoiceTime, totalX1, totalTime, jitterAcc, jitterAccSqr;
-
-double voiceSilenceTotalTime = 0;
-int voiceSilenceTotalTimeGenerated = 0;
-
-void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime) {
-	// Add nq1, nq2, w1, w2 and x1
+// Cálculo de estatísticas
+/**
+ * Incrementa o acumulado de pessoas na fila ao longo da rodada s
+ * @param Nq2
+ * @param Nq1
+ * @param lastTime
+ * @param currentTime
+ * @param s
+ */
+void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime, SimulationRound &s) {
 	double t = currentTime - lastTime;
 	if (server != nullptr && server->type == PackageType::DATA) {
-	    totalX1 += t;
 		Nq1--;
 	}
-	totalDataTime += Nq1 * t;
-	totalVoiceTime += Nq2 * t;
+	s.totalDataTimeInQueue += Nq1 * t;
+	s.totalVoiceTimeInQueue += Nq2 * t;
 }
 
-void calculateAreaStatistics(SimulationRound &s) {
-	double roundDuration = totalTime - s.startTime;
-
-    // Estatísticas dos dados
-	cout << "Total Data Time: " << totalDataTime << ", Round Duration: " << roundDuration << endl;
-	s.Nq1 = totalDataTime == 0 ? 0 : totalDataTime / roundDuration;
-	s.W1 = totalDataTime == 0 ? 0 : totalDataTime / n1Packages;
-//	cout << "Total W1: " << totalDataTime << ", n1Packages: " << n1Packages << endl;
-	cout << "Total X1: " << totalX1 << ", n1Packages: " << n1Packages << endl;
-
-	s.X1 = totalX1 == 0 ? 0 : totalX1 / n1Packages;
-	// Estatísticas dos pacotes de voz
-
-	cout << "Total Voice Time: " << totalVoiceTime << ", Total Time: " << totalTime << endl;
-	cout << "n2Packages: " << n2Packages << endl;
-	s.Nq2 = totalVoiceTime == 0 ? 0 : (totalVoiceTime / (roundDuration * VOICE_CHANNELS));
-	s.W2 = totalVoiceTime == 0 ? 0 : totalVoiceTime / n2Packages;
-	//X2 constante
-	cout << "Jitter Acc: " << jitterAcc << ", n2Intervals: " << n2Intervals << endl;
-	s.JitterMean = jitterAcc == 0 ? 0 : jitterAcc / n2Intervals;
-	s.JitterVariance = (jitterAcc == 0 || jitterAccSqr == 0 || n2Intervals == 0) ? 0 :
-					   (jitterAccSqr * n2Intervals - jitterAcc * jitterAcc) / (n2Intervals * (n2Intervals - 1));
+/**
+ * Insere as estatísticas do pacote na rodada de simulação equivalente e deleta o objeto para evitar vazamento de memória
+ * @param packet
+ * @param rounds
+ */
+void countPacketIntoStatistics(Packet *packet, SimulationRound &s) {
+	if (packet->simulation) {
+		switch (packet->type) {
+			case PackageType::DATA:
+				s.T1Acc += packet->totalTime;
+				s.n1Packages++;
+				s.X1Acc += packet->serviceTime + packet->property.wastedTime;
+				break;
+			case PackageType::VOICE:
+				s.T2Acc += packet->totalTime;
+				s.n2Packages++;
+				// Jitter incrementado do lado de fora
+				break;
+		}
+	}
+	delete packet;
 }
 
-void incrementJitter(int channel, double currentTime) {
+/**
+ * Inclui o intervalo do canal no acumulado da rodada s
+ * @param s
+ * @param channel
+ * @param currentTime
+ */
+void incrementJitter(SimulationRound &s, int channel, double currentTime) {
 	double lastDeparture = channelsLastDeparture[channel];
-	double lastInterval = currentTime - lastDeparture;
-
 	if (lastDeparture != -1) {
-		jitterAcc += lastInterval;
-		jitterAccSqr += lastInterval * lastInterval;
-		n2Intervals += 1;
+		double lastInterval = currentTime - lastDeparture;
+		s.jitterAcc += lastInterval;
+		s.jitterAccSqr += lastInterval * lastInterval;
+		s.n2Intervals += 1;
 	}
 }
 
 /**
- * Coloca o valor de todas as variáveis usadas para as estatísticas em zero para evitar
+ * Transforma os acumulados da rodada s em estatísticas
+ * @param s
  */
-void resetStats() {
-	JitterMean = JitterVariance = n1Packages = n2Packages = n2Intervals = 0;
-	jitterAcc = jitterAccSqr = 0;
-	totalTime = totalDataTime = totalVoiceTime = totalX1 = 0.0;
+void calculateRoundStatistics(SimulationRound &s) {
+	s.T1 = s.T1Acc / s.n1Packages;
+	s.Nq1 = s.totalDataTimeInQueue == 0 ? 0 : s.totalDataTimeInQueue / s.totalTime;
+	s.X1 = s.X1Acc / s.n1Packages;
+
+	s.T2 = s.T2Acc / s.n2Packages;
+	s.Nq2 = s.totalVoiceTimeInQueue == 0 ? 0 : (s.totalVoiceTimeInQueue / (s.totalTime * VOICE_CHANNELS));
+	s.JitterMean = s.jitterAcc == 0 ? 0 : s.jitterAcc / s.n2Intervals;
+	s.JitterVariance = (s.jitterAcc == 0 || s.jitterAccSqr == 0 || s.n2Intervals == 0) ? 0 :
+					   (s.jitterAccSqr - s.jitterAcc * s.jitterAcc / s.n2Intervals) / (s.n2Intervals - 1);
 }
 
-void setupSimulationStats(SimulationRound &s) {
-	s.JitterMean = s.JitterVariance = s.n1Packages = s.n2Packages = s.n2Intervals = 0;
-	s.jitterAcc = s.jitterAccSqr = 0;
-	s.totalTime = s.totalDataTime = s.totalVoiceTime = 0.0;
-	s.startTime = 0.0;
-}
-
+// Outputs
 /**
  * Imprime em stdout o valor das estatísticas globais: E[T1], E[W1], E[X1], E[Nq1], E[T2], E[W2], E[X2], E[Nq2], E[Δ] e V(Δ)
  */
 void printStats(SimulationRound &s) {
 #ifdef LOG
 	cout << "Tempo médio entre chegadas: " << (aux_tempo_entre_chegadas / SAMPLES) << endl;
-	cout << "Voice Silence Media: " << (voiceSilenceTotalTime / voiceSilenceTotalTimeGenerated) << endl;
 	cout << "lambda_1: " << n1Packages / max_time << " pacotes dados/seg" << endl;
 	cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "Max Time: " << max_time << endl;
 #endif
-    cout << "lambda_1: " << n1Packages / max_time << " pacotes dados/seg" << endl;
-    cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
-	cout << "E[T1]: " << s.W1 + s.X1 << ", E[W1]: " << s.W1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
-	cout << "E[T2]: " << s.W2 + X2 << ", E[W2]: " << s.W2 <<
-		 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]; " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
+	cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
+	cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
+		 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]: " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
 }
 
 /**
@@ -254,90 +253,67 @@ void printHelp() {
 	cout << "\t-p\tFila de dados pode ser interrompida ()" << endl;
 }
 
-/**
- * Insere as estatísticas do pacote na rodada de simulação equivalente e deleta o objeto para evitar vazamento de memória
- * @param packet
- */
-// TODO
-void countPacketIntoStatistics(Packet *packet, SimulationRound rounds[]) {
-	if (packet->simulation > -1) {
-		SimulationRound s = rounds[packet->simulation];
-		switch (packet->type) {
-			case PackageType::DATA:
+int main(int argc, char *argv[]) {
+	// Pegando opções na linha de comando
+	for (int p = 1; p < argc; ++p) {
+		string option = argv[p];
+		if (option[0] != '-') {
+			cout << "Opção " << argv[p] << " inválida" << endl;
+			continue;
+		}
+		switch (option[1]) {
+			case 'a': //Número de amostras
+				SAMPLES = stoi(argv[++p]);
 				break;
-			case PackageType::VOICE:
+			case 'p': // Com ou sem preempção
+				PREEMPTION = true;
 				break;
+			case 'r': // Número de rodadas de simulação
+				SIMULATIONS = stoi(argv[++p]);
+				break;
+			case 'u': // Utilização da fila de dados
+				UTILIZATION_1 = stod(argv[++p]);
+				DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
+				break;
+			case 'h':
+				printHelp();
+				return 0;
+			default:
+				cout << "Opção " << argv[p] << " inválida" << endl;
+				continue;
 		}
 	}
-	delete packet;
-}
 
-int main(int argc, char *argv[]) {
-    srand(time(0));
-
-	for (int p = 1; p < argc; ++p) {
-    	string option = argv[p];
-    	if (option[0] != '-') {
-    		cout << "Opção " << argv[p] << " inválida" << endl;
-    		continue;
-    	}
-    	switch (option[1]) {
-    		case 'a': //Número de amostras
-    			SAMPLES = stoi(argv[++p]);
-    			break;
-    		case 'p': // Com ou sem preempção
-    			PREEMPTION = true;
-    			break;
-    		case 'r': // Número de rodadas de simulação
-    			SIMULATIONS = stoi(argv[++p]);
-    			break;
-    		case 'u': // Utilização da fila de dados
-    			UTILIZATION_1 = stod(argv[++p]);
-    			DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
-    			break;
-    		case 'h':
-    			printHelp();
-    			return 0;
-    		default:
-    			cout << "Opção " << argv[p] << " inválida" << endl;
-    			continue;
-    	}
-    }
 	// Filas e variáveis de controle
 	priority_queue<Event> arrivals; // Estrutura para organizar as chegadas
 	queue<Packet *> data, voice; // Filas de data e voz
 	int interruptedDataPackages = 0; // Pacotes de dados interrompidos (usado para invalidar os respectivos pacotes quando a antiga saída aparecer na lista)
-	SimulationRound rounds[SIMULATIONS]; // Estatísticas das várias rodadas de simulação.
-    double lastTime, lastArrivalTime = 0.0;
+	SimulationRound rounds[SIMULATIONS + 1]; // Estatísticas das várias rodadas de simulação.
+	double lastTime = 0, lastArrivalTime = 0.0;
 
+	// Configurações iniciais
+	srand(time(0));
 	setup(arrivals);
-
-	for (int i = 0; i < SIMULATIONS; ++i) {
+	for (int i = 0; i <= SIMULATIONS; ++i) {
 		setupSimulationStats(rounds[i]);
 	}
 
+	// Período transiente
 	for (int i = 0; i < TRANSIENT_SAMPLE_NUMBER; ++i) {
-		// Executa o período transiente da simulação
+		// TODO Executa o período transiente da simulação
 	}
 
-	for (int s = 0; s < SIMULATIONS; ++s) {
+	// Executando rodadas de simulação
+	for (int s = 1; s <= SIMULATIONS; ++s) {
 		double t;
-        rounds[s].startTime = totalTime;
-
-        resetStats();
-
+		rounds[s].startTime = lastTime;
 		for (int i = 0; i < SAMPLES; ++i) {
 #ifdef PROGRESS_BAR
 			if (i % (SAMPLES / 20) == 0) cout << (i * 100 / SAMPLES) << "%" << 'r' << flush;
 #endif
-//		getchar();
 			Event arrival = arrivals.top();
 			arrivals.pop();
-
-			registerAreaStatistics(voice.size(), data.size(), lastTime, arrival.time);
-			max_time = arrival.time;
-			lastTime = arrival.time;
-			totalTime = arrival.time;
+			registerAreaStatistics(voice.size(), data.size(), lastTime, arrival.time, rounds[s]);
 
 #ifdef LOG
 			cout << "!! Time: " << arrival.time << (arrival.type == EventType::VOICE ? " (Voice)" : " (Server)") << endl;
@@ -354,10 +330,7 @@ int main(int argc, char *argv[]) {
 
 					aux_tempo_entre_chegadas += arrival.time - lastArrivalTime;
 					lastArrivalTime = arrival.time;
-#ifdef LOG
-				cout << "Tempo entre chegadas: " << aux_tempo_entre_chegadas << " ~ " << arrival.time - lastTime << endl;
-				cout << "> Gerado novo pacote de dados chegando em: " << arrival.time  << " + DATA_ARRIVAL_TIME" << endl;
-#endif
+
 					// Coloca a próxima chegada de pacote de dados na fila de eventos
 					arrivals.PUSH(Event)(arrival.time + DATA_ARRIVAL_TIME, EventType::DATA, new Packet(s, DATA_TIME_OF_SERVICE))ENDPUSH;
 
@@ -366,13 +339,13 @@ int main(int argc, char *argv[]) {
 					}
 					break;
 				case EventType::VOICE:
-//					cout << "Chegada de Pacote de Voz (" << (activePeriodLength[arrival.stats->channel] + 1) << "º do periodo ativo)" << endl;
 					// Coloca a próxima chegada do canal na heap de eventos
+					arrival.packet->totalTime = -arrival.time;
 					t = arrival.time + VOICE_ARRIVAL_TIME;
-//					if (genEndOfActivePeriod()) {
+					if (genEndOfActivePeriod()) {
 						t += VOICE_SILENCE_TIME;
 						arrival.packet->property.channel.lastVoicePackage = true;
-//					}
+					}
 
 					// DEBUG Para trabalhar com tamanho fixo de pacotes no período ativo
 //					if (activePeriodLength[0] < 4) {
@@ -384,7 +357,6 @@ int main(int argc, char *argv[]) {
 //						activePeriodLength[0] = 0;
 //					}
 
-					n2Packages++;
 					arrivals.PUSH(Event)(t, EventType::VOICE, new Packet(s, arrival.packet->property.channel.number, VOICE_TIME_OF_SERVICE))ENDPUSH;
 					if (server == nullptr) {
 						serveEvent(arrival.packet, arrivals, arrival.time);
@@ -399,40 +371,47 @@ int main(int argc, char *argv[]) {
 					break;
 				case EventType::SERVER:
 					i--; //Saída do simulador não conta como amostra para a contagem
+					SimulationRound &r = rounds[arrival.packet->simulation];
 					switch (arrival.packet->type) {
 						case PackageType::DATA:
 							if (interruptedDataPackages) {
 								interruptedDataPackages--;
 							} else {
-								n1Packages += 1;
 								data.pop();
 								arrival.packet->totalTime += arrival.time;
-								countPacketIntoStatistics(arrival.packet, rounds);
+								countPacketIntoStatistics(arrival.packet, r);
 								server = serveNextEvent(arrivals, voice, data, arrival.time);
 							}
 							break;
 						case PackageType::VOICE:
-							incrementJitter(arrival.packet->property.channel.number, arrival.time);
+							incrementJitter(r, arrival.packet->property.channel.number, arrival.time);
 							if (!arrival.packet->property.channel.lastVoicePackage) {
 								channelsLastDeparture[arrival.packet->property.channel.number] = arrival.time;
-							} else {
-;								channelsLastDeparture[arrival.packet->property.channel.number] = -1;
+							} else { ;
+								channelsLastDeparture[arrival.packet->property.channel.number] = -1;
 							}
 							arrival.packet->totalTime += arrival.time;
-							countPacketIntoStatistics(arrival.packet, rounds);
+							countPacketIntoStatistics(arrival.packet, r);
 							server = serveNextEvent(arrivals, voice, data, arrival.time);
 							break;
 					}
 					break;
 			}
+			lastTime = arrival.time;
 		}
-        calculateAreaStatistics(rounds[s]);
+		rounds[s].totalTime = lastTime - rounds[s].startTime;
 	}
 
-	for (int i = 0; i < SIMULATIONS; ++i) {
-		SimulationRound s = rounds[i];
+	// TODO rodadas extras para finalizar os fregueses da última rodada
+
+	// Cálculo e output das estatísticas de cada rodada
+	for (int i = 1; i <= SIMULATIONS; ++i) {
+		SimulationRound &s = rounds[i];
+		calculateRoundStatistics(s);
 		printStats(s);
 	}
+
+	// TODO Intervalo de Confiança
 
 	return 0;
 }
