@@ -6,7 +6,7 @@
 #include <time.h>
 #include "Event.h"
 
-//#define PROGRESS_BAR // Mostra barra de progresso para cada rodada de simulação
+#define PROGRESS_BAR // Mostra progresso para cada rodada de simulação
 //#define LOG // Coloca alguns outputs a mais para acompanhar valores
 //#define EMPLACE // Melhora o uso de memória (Comentado durante desenvolvimento para melhor uso da IDE)
 
@@ -23,12 +23,12 @@ using namespace std;
 
 /*PARÂMETROS*/
 // Parâmetros da simulação
-int SAMPLES = 100000;                    // Número de amostras por rodada
-int SIMULATIONS = 5;                    // Número de rodadas de simulação
-bool PREEMPTION = false;                // Interrupção dos pacotes de dados em caso de chegada de pacote de voz
+int SAMPLES = 1000000;                 // Número de amostras por rodada
+int SIMULATIONS = 5;                   // Número de rodadas de simulação
+bool PREEMPTION = false;               // Interrupção dos pacotes de dados em caso de chegada de pacote de voz
 double UTILIZATION_1 = 0.1;            // ρ1 (utilização da fila de dados)
-constexpr double SERVER_SPEED = 2e6;    // Velocidade do servidor (2Mb/segundo)
-int TRANSIENT_SAMPLE_NUMBER = 0;        // Amostras colocadas no período transiente
+constexpr double SERVER_SPEED = 2e6;   // Velocidade do servidor (2Mb/segundo)
+int TRANSIENT_SAMPLE_NUMBER = 1000000;  // Amostras colocadas no período transiente
 
 struct SimulationRound {
 	int n1Packages, n2Packages, n2Intervals;                    // Controle do número de pacotes da rodada
@@ -116,8 +116,8 @@ void setup(priority_queue<Event> &arrivals) {
  */
 void setupSimulationStats(SimulationRound &s) {
 	s.X1Acc = s.T1Acc = s.T2Acc = s.jitterAcc = s.jitterAccSqr =
-			s.startTime = s.totalTime = s.totalDataTimeInQueue = s.totalVoiceTimeInQueue =
-			s.n1Packages = s.n2Packages = s.n2Intervals = 0;
+	s.startTime = s.totalTime = s.totalDataTimeInQueue = s.totalVoiceTimeInQueue =
+	s.n1Packages = s.n2Packages = s.n2Intervals = 0;
 }
 
 // Colocar eventos na heap
@@ -251,9 +251,107 @@ void printHelp() {
 	cout << "_exe_ [OPTIONS]" << endl;
 	cout << "\t-h\t\tMostra essa ajuda" << endl;
 	cout << "\t-a int\tNúmero de amostras" << endl;
+	cout << "\t-t int\tNúmero de amostras do período transiente" << endl;
 	cout << "\t-s int\tNúmero de rodadas de simulação" << endl;
 	cout << "\t-u double\tUtilização da fila 1" << endl;
 	cout << "\t-p\tFila de dados pode ser interrompida ()" << endl;
+}
+
+void runSimulationRound(
+		SimulationRound rounds[], int s, int samples,
+		priority_queue<Event> &arrivals, queue<Packet *> &voice, queue<Packet *> &data,
+		double &lastTime, int &interruptedDataPackages) {
+	double t;
+	for (int i = 0; i < samples; ++i) {
+		#ifdef PROGRESS_BAR
+		if (i % (samples / 20) == 0) cout << "Rodando simulação " << s << ": " << (i * 100 / samples) << "%" << '\r' << flush;
+		#endif
+		Event arrival = arrivals.top();
+		arrivals.pop();
+		registerAreaStatistics(voice.size(), data.size(), lastTime, arrival.time, rounds[s]);
+
+		#ifdef LOG
+		cout << "!! Time: " << arrival.time << (arrival.type == EventType::VOICE ? " (Voice)" : " (Server)") << endl;
+			cout << "channelsLastDeparture[0]: " << channelsLastDeparture[0] << endl;
+			cout << "Instante " << arrival.time << "s" << endl;
+			cout << "Filas:" << endl << "> Dados: " << (data.size() == 0 ? 0 : data.size() - 1) << endl << "> Voz: " << (voice.size() == 0 ? 0 : voice.size() - 1) << endl << endl;
+		#endif
+
+		switch (arrival.type) {
+			case EventType::DATA:
+				// Configura o tempo de serviço do pacote e coloca o mesmo na fila
+				arrival.packet->totalTime = -arrival.time;
+				data.push(arrival.packet);
+
+				// Coloca a próxima chegada de pacote de dados na fila de eventos
+				arrivals.PUSH(Event)(arrival.time + DATA_ARRIVAL_TIME, EventType::DATA, new Packet(s, DATA_TIME_OF_SERVICE))ENDPUSH;
+
+				if (server == nullptr) {
+					server = serveEvent(arrival.packet, arrivals, arrival.time);
+				}
+				break;
+			case EventType::VOICE:
+				// Coloca a próxima chegada do canal na heap de eventos
+				arrival.packet->totalTime = -arrival.time;
+				t = arrival.time;//+ VOICE_ARRIVAL_TIME;
+//					if (genEndOfActivePeriod()) {
+				t += VOICE_SILENCE_TIME;
+				arrival.packet->property.channel.lastVoicePackage = true;
+//					}
+
+				// DEBUG Para trabalhar com tamanho fixo de pacotes no período ativo
+//					if (activePeriodLength[0] < 4) {
+//						activePeriodLength[0]++;
+//						arrival.packet->property.channel.lastVoicePackage = false;
+//					} else {
+//						t += VOICE_SILENCE_TIME;
+//						arrival.packet->property.channel.lastVoicePackage = true;
+//						activePeriodLength[0] = 0;
+//					}
+
+				arrivals.PUSH(Event)(t, EventType::VOICE, new Packet(s, arrival.packet->property.channel.number, VOICE_TIME_OF_SERVICE))ENDPUSH;
+				if (server == nullptr) {
+					serveEvent(arrival.packet, arrivals, arrival.time);
+					server = arrival.packet;
+				} else if (PREEMPTION && server->type == PackageType::DATA) {
+					interruptedDataPackages++;
+					data.front()->property.wastedTime -= arrival.time;
+					server = serveEvent(arrival.packet, arrivals, arrival.time);
+				} else {
+					voice.push(arrival.packet);
+				}
+				break;
+			case EventType::SERVER:
+				i--; //Saída do simulador não conta como amostra para a contagem
+				SimulationRound &r = rounds[arrival.packet->simulation];
+				switch (arrival.packet->type) {
+					case PackageType::DATA:
+						if (interruptedDataPackages) {
+							interruptedDataPackages--;
+							data.front()->property.wastedTime += arrival.time;
+						} else {
+							data.pop();
+							arrival.packet->totalTime += arrival.time;
+							countPacketIntoStatistics(arrival.packet, r);
+							server = serveNextEvent(arrivals, voice, data, arrival.time);
+						}
+						break;
+					case PackageType::VOICE:
+						incrementJitter(r, arrival.packet->property.channel.number, arrival.time);
+						if (!arrival.packet->property.channel.lastVoicePackage) {
+							channelsLastDeparture[arrival.packet->property.channel.number] = arrival.time;
+						} else { ;
+							channelsLastDeparture[arrival.packet->property.channel.number] = -1;
+						}
+						arrival.packet->totalTime += arrival.time;
+						countPacketIntoStatistics(arrival.packet, r);
+						server = serveNextEvent(arrivals, voice, data, arrival.time);
+						break;
+				}
+				break;
+		}
+		lastTime = arrival.time;
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -273,6 +371,9 @@ int main(int argc, char *argv[]) {
 				break;
 			case 'r': // Número de rodadas de simulação
 				SIMULATIONS = stoi(argv[++p]);
+				break;
+			case 't': // Número de amostras do período transiente
+				TRANSIENT_SAMPLE_NUMBER = stoi(argv[++p]);
 				break;
 			case 'u': // Utilização da fila de dados
 				UTILIZATION_1 = stod(argv[++p]);
@@ -302,115 +403,22 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Período transiente
-	for (int i = 0; i < TRANSIENT_SAMPLE_NUMBER; ++i) {
-		// TODO Executa o período transiente da simulação
-	}
+	runSimulationRound(rounds, 0, TRANSIENT_SAMPLE_NUMBER, arrivals, voice, data, lastTime, interruptedDataPackages);
 
 	// Executando rodadas de simulação
 	for (int s = 1; s <= SIMULATIONS; ++s) {
-		double t;
 		rounds[s].startTime = lastTime;
-		for (int i = 0; i < SAMPLES; ++i) {
-#ifdef PROGRESS_BAR
-			if (i % (SAMPLES / 20) == 0) cout << (i * 100 / SAMPLES) << "%" << 'r' << flush;
-#endif
-			Event arrival = arrivals.top();
-			arrivals.pop();
-			registerAreaStatistics(voice.size(), data.size(), lastTime, arrival.time, rounds[s]);
-
-#ifdef LOG
-			cout << "!! Time: " << arrival.time << (arrival.type == EventType::VOICE ? " (Voice)" : " (Server)") << endl;
-			cout << "channelsLastDeparture[0]: " << channelsLastDeparture[0] << endl;
-			cout << "Instante " << arrival.time << "s" << endl;
-			cout << "Filas:" << endl << "> Dados: " << (data.size() == 0 ? 0 : data.size() - 1) << endl << "> Voz: " << (voice.size() == 0 ? 0 : voice.size() - 1) << endl << endl;
-#endif
-
-			switch (arrival.type) {
-				case EventType::DATA:
-					// Configura o tempo de serviço do pacote e coloca o mesmo na fila
-					arrival.packet->totalTime = -arrival.time;
-					data.push(arrival.packet);
-
-					aux_tempo_entre_chegadas += arrival.time - lastArrivalTime;
-					lastArrivalTime = arrival.time;
-
-					// Coloca a próxima chegada de pacote de dados na fila de eventos
-					arrivals.PUSH(Event)(arrival.time + DATA_ARRIVAL_TIME, EventType::DATA, new Packet(s, DATA_TIME_OF_SERVICE))ENDPUSH;
-
-					if (server == nullptr) {
-						server = serveEvent(arrival.packet, arrivals, arrival.time);
-					}
-					break;
-				case EventType::VOICE:
-					// Coloca a próxima chegada do canal na heap de eventos
-					arrival.packet->totalTime = -arrival.time;
-					t = arrival.time + VOICE_ARRIVAL_TIME;
-					if (genEndOfActivePeriod()) {
-						t += VOICE_SILENCE_TIME;
-						arrival.packet->property.channel.lastVoicePackage = true;
-					}
-
-					// DEBUG Para trabalhar com tamanho fixo de pacotes no período ativo
-//					if (activePeriodLength[0] < 4) {
-//						activePeriodLength[0]++;
-//						arrival.packet->property.channel.lastVoicePackage = false;
-//					} else {
-//						t += VOICE_SILENCE_TIME;
-//						arrival.packet->property.channel.lastVoicePackage = true;
-//						activePeriodLength[0] = 0;
-//					}
-
-					arrivals.PUSH(Event)(t, EventType::VOICE, new Packet(s, arrival.packet->property.channel.number, VOICE_TIME_OF_SERVICE))ENDPUSH;
-					if (server == nullptr) {
-						serveEvent(arrival.packet, arrivals, arrival.time);
-						server = arrival.packet;
-					} else if (PREEMPTION && server->type == PackageType::DATA) {
-						interruptedDataPackages++;
-						data.front()->totalTime = -arrival.time;
-						server = serveEvent(arrival.packet, arrivals, arrival.time);
-					} else {
-						voice.push(arrival.packet);
-					}
-					break;
-				case EventType::SERVER:
-					i--; //Saída do simulador não conta como amostra para a contagem
-					SimulationRound &r = rounds[arrival.packet->simulation];
-					switch (arrival.packet->type) {
-						case PackageType::DATA:
-							if (interruptedDataPackages) {
-								interruptedDataPackages--;
-							} else {
-								data.pop();
-								arrival.packet->totalTime += arrival.time;
-								countPacketIntoStatistics(arrival.packet, r);
-								server = serveNextEvent(arrivals, voice, data, arrival.time);
-							}
-							break;
-						case PackageType::VOICE:
-							incrementJitter(r, arrival.packet->property.channel.number, arrival.time);
-							if (!arrival.packet->property.channel.lastVoicePackage) {
-								channelsLastDeparture[arrival.packet->property.channel.number] = arrival.time;
-							} else { ;
-								channelsLastDeparture[arrival.packet->property.channel.number] = -1;
-							}
-							arrival.packet->totalTime += arrival.time;
-							countPacketIntoStatistics(arrival.packet, r);
-							server = serveNextEvent(arrivals, voice, data, arrival.time);
-							break;
-					}
-					break;
-			}
-			lastTime = arrival.time;
-		}
+		runSimulationRound(rounds, s, SAMPLES, arrivals, voice, data, lastTime, interruptedDataPackages);
 		rounds[s].totalTime = lastTime - rounds[s].startTime;
 	}
 
-	// TODO rodadas extras para finalizar os fregueses da última rodada
+	// TODO rodadas extras para finalizar os fregueses da última rodada (necessário?)
 
 	// Cálculo e output das estatísticas de cada rodada
 	for (int i = 1; i <= SIMULATIONS; ++i) {
 		SimulationRound &s = rounds[i];
 		calculateRoundStatistics(s);
+		cout << "Simulação " << i << endl;
 		printStats(s);
 	}
 
