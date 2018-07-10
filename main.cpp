@@ -95,9 +95,11 @@ double aux_tempo_entre_chegadas = 0;
 double max_time = 0;
 double channelsLastDeparture[VOICE_CHANNELS];
 int activePeriodLength[VOICE_CHANNELS];
+bool JSON = false;
 
 /*FUNÇÕES*/
 // Configurações iniciais
+
 /**
  * Calcula o tempo da primeira chegada de cada evento e coloca na heap de eventos
  * @param arrivals A heap de eventos
@@ -240,9 +242,15 @@ void printStats(SimulationRound &s) {
 	cout << "lambda_2: " << n2Packages / max_time << " pacotes voz/seg" << endl;
 	cout << "Max Time: " << max_time << endl;
 #endif
-	cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
-	cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
-		 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]: " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
+	if (JSON) {
+		cout << R"({"t1":)" << s.T1 << R"(,"w1":)" << s.T1 - s.X1 << R"(,"x1":)" << s.X1 << R"(,"Nq1":)" << s.Nq1 <<
+			 R"(,"t2":)" << s.T2 << R"(,"w2":)" << s.T2 - X2 << R"(,"x2":)" << X2 << R"(,"Nq2":)" << s.Nq2 <<
+			 R"(,"jitterE":)" << s.JitterMean << R"(,"jitterV":)" << s.JitterVariance << R"(})";
+	} else {
+		cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
+		cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
+			 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]: " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
+	}
 }
 
 /**
@@ -400,16 +408,30 @@ void printConfidenceInterval(SimulationRound rounds[]) {
 	VarianceNq2 *= percentil90 / sqrt(SIMULATIONS);
 	VarianceJitterMean *= percentil90 / sqrt(SIMULATIONS);
 	VarianceJitterVariance *= percentil90 / sqrt(SIMULATIONS);
-
-	cout << "T1:\t\t\t\t" << f.T1 - VarianceT1 << "\t" << f.T1 << "\t" << f.T1 + VarianceT1 << "\t" << VarianceT1 * 200 / f.T1 << "%" << endl;
-	cout << "W1:\t\t\t\t" << W1 - VarianceW1 << "\t" << W1 << "\t" << W1 + VarianceW1 << "\t" << VarianceW1 * 200 / W1 << "%" << endl;
-	cout << "X1:\t\t\t\t" << f.X1 - VarianceX1 << "\t" << f.X1 << "\t" << f.X1 + VarianceX1 << "\t" << VarianceX1 * 200 / f.X1 << "%" << endl;
-	cout << "Nq1:\t\t\t" << f.Nq1 - VarianceNq1 << "\t" << f.Nq1 << "\t" << f.Nq1 + VarianceNq1 << "\t" << VarianceNq1 * 200 / f.Nq1 << "%" << endl;
-	cout << "T2:\t\t\t\t" << f.T2 - VarianceT2 << "\t" << f.T2 << "\t" << f.T2 + VarianceT2 << "\t" << VarianceT2 * 200 / f.T2 << "%" << endl;
-	cout << "W2:\t\t\t\t" << W2 - VarianceW2 << "\t" << W2 << "\t" << W2 + VarianceW2 << "\t" << VarianceW2 * 200 / W2 << "%" << endl;
-	cout << "Nq2:\t\t\t" << f.Nq2 - VarianceNq2 << "\t" << f.Nq2 << "\t" << f.Nq2 + VarianceNq2 << "\t" << VarianceNq2 * 200 / f.Nq2 << "%" << endl;
-	cout << "JitterMean:\t\t" << f.JitterMean - VarianceJitterMean << "\t" << f.JitterMean << "\t" << f.JitterMean + VarianceJitterMean << "\t" << VarianceJitterMean * 200 / f.JitterMean << "%" << endl;
-	cout << "JitterVariance:\t" << f.JitterVariance - VarianceJitterVariance << "\t" << f.JitterVariance << "\t" << f.JitterVariance + VarianceJitterVariance << "\t" << VarianceJitterVariance * 200 / f.JitterVariance << "%" << endl;
+	if (JSON) {
+		cout << ",\"confidenceInterval\":{" <<
+			R"("T1":{"lesser":)" << f.T1 - VarianceT1 << ",\"mean\":" << f.T1 << ",\"upper\":" << f.T1 + VarianceT1 << ",\"percentage\":" << VarianceT1 * 200 / f.T1 << "}," <<
+			R"("W1":{"lesser":)" << W1 - VarianceW1 << ",\"mean\":" << W1 << ",\"upper\":" << W1 + VarianceW1 << ",\"percentage\":" << VarianceW1 * 200 / W1 << "}," <<
+			R"("X1":{"lesser":)" << f.X1 - VarianceX1 << ",\"mean\":" << f.X1 << ",\"upper\":" << f.X1 + VarianceX1 << ",\"percentage\":" << VarianceX1 * 200 / f.X1 << "}," <<
+			R"("Nq1":{"lesser":)" << f.Nq1 - VarianceNq1 << ",\"mean\":" << f.Nq1 << ",\"upper\":" << f.Nq1 + VarianceNq1 << ",\"percentage\":" << VarianceNq1 * 200 / f.Nq1 << "}," <<
+			R"("T2":{"lesser":)" << f.T2 - VarianceT2 << ",\"mean\":" << f.T2 << ",\"upper\":" << f.T2 + VarianceT2 << ",\"percentage\":" << VarianceT2 * 200 / f.T2 << "}," <<
+			R"("W2":{"lesser":)" << W2 - VarianceW2 << ",\"mean\":" << W2 << ",\"upper\":" << W2 + VarianceW2 << ",\"percentage\":" << VarianceW2 * 200 / W2 << "}," <<
+			R"("Nq2":{"lesser":)" << f.Nq2 - VarianceNq2 << ",\"mean\":" << f.Nq2 << ",\"upper\":" << f.Nq2 + VarianceNq2 << ",\"percentage\":" << VarianceNq2 * 200 / f.Nq2 << "}," <<
+			R"("JitterMean":{"lesser":)" << f.JitterMean - VarianceJitterMean << ",\"mean\":" << f.JitterMean << ",\"upper\":" << f.JitterMean + VarianceJitterMean <<
+																									",\"percentage\":" << VarianceJitterMean * 200 / f.JitterMean << "}," <<
+			R"("JitterVariance":{"lesser":)" << f.JitterVariance - VarianceJitterVariance << ",\"mean\":" << f.JitterVariance << ",\"upper\":" << f.JitterVariance + VarianceJitterVariance <<
+																									",\"percentage\":" << VarianceJitterVariance * 200 / f.JitterVariance << "}}";
+	} else {
+		cout << "T1:\t\t\t\t" << f.T1 - VarianceT1 << "\t" << f.T1 << "\t" << f.T1 + VarianceT1 << "\t" << VarianceT1 * 200 / f.T1 << "%" << endl;
+		cout << "W1:\t\t\t\t" << W1 - VarianceW1 << "\t" << W1 << "\t" << W1 + VarianceW1 << "\t" << VarianceW1 * 200 / W1 << "%" << endl;
+		cout << "X1:\t\t\t\t" << f.X1 - VarianceX1 << "\t" << f.X1 << "\t" << f.X1 + VarianceX1 << "\t" << VarianceX1 * 200 / f.X1 << "%" << endl;
+		cout << "Nq1:\t\t\t" << f.Nq1 - VarianceNq1 << "\t" << f.Nq1 << "\t" << f.Nq1 + VarianceNq1 << "\t" << VarianceNq1 * 200 / f.Nq1 << "%" << endl;
+		cout << "T2:\t\t\t\t" << f.T2 - VarianceT2 << "\t" << f.T2 << "\t" << f.T2 + VarianceT2 << "\t" << VarianceT2 * 200 / f.T2 << "%" << endl;
+		cout << "W2:\t\t\t\t" << W2 - VarianceW2 << "\t" << W2 << "\t" << W2 + VarianceW2 << "\t" << VarianceW2 * 200 / W2 << "%" << endl;
+		cout << "Nq2:\t\t\t" << f.Nq2 - VarianceNq2 << "\t" << f.Nq2 << "\t" << f.Nq2 + VarianceNq2 << "\t" << VarianceNq2 * 200 / f.Nq2 << "%" << endl;
+		cout << "JitterMean:\t\t" << f.JitterMean - VarianceJitterMean << "\t" << f.JitterMean << "\t" << f.JitterMean + VarianceJitterMean << "\t" << VarianceJitterMean * 200 / f.JitterMean << "%" << endl;
+		cout << "JitterVariance:\t" << f.JitterVariance - VarianceJitterVariance << "\t" << f.JitterVariance << "\t" << f.JitterVariance + VarianceJitterVariance << "\t" << VarianceJitterVariance * 200 / f.JitterVariance << "%" << endl;
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -436,6 +458,9 @@ int main(int argc, char *argv[]) {
 			case 'u': // Utilização da fila de dados
 				UTILIZATION_1 = stod(argv[++p]);
 				DATA_ARRIVAL_RATE = UTILIZATION_1 / (755 * 8 / SERVER_SPEED); // Î»1 = Ï1/E[X1] = Ï1/(E[L]bytes*8/(2Mb/s))
+				break;
+			case 'j':
+				JSON = true;
 				break;
 			case 'h':
 				printHelp();
@@ -478,6 +503,7 @@ int main(int argc, char *argv[]) {
 	// Cálculo e output das estatísticas de cada rodada
 	SimulationRound &f = rounds[0];
 	setupSimulationStats(f);
+	if (JSON) cout << R"({"simulations":[)";
 	for (int i = 1; i <= SIMULATIONS; ++i) {
 		SimulationRound &s = rounds[i];
 		calculateRoundStatistics(s);
@@ -488,9 +514,14 @@ int main(int argc, char *argv[]) {
 		f.Nq2 += s.Nq2;
 		f.JitterMean += s.JitterMean;
 		f.JitterVariance += s.JitterVariance;
-		cout << "Simulação " << i << endl;
+		if (JSON) {
+			if (i > 1) cout << ",";
+		} else {
+			cout << "Simulação " << i << endl;
+		}
 		printStats(s);
 	}
+	if (JSON) cout << "],";
 
 	// Cálculo e output do intervalo de confiança
 	f.T1 /= SIMULATIONS;
@@ -500,12 +531,16 @@ int main(int argc, char *argv[]) {
 	f.Nq2 /= SIMULATIONS;
 	f.JitterMean /= SIMULATIONS;
 	f.JitterVariance /= SIMULATIONS;
-	cout << "=================================================" << endl;
-	cout << "=================================================" << endl;
-	cout << "=================================================" << endl;
-	cout << "Resultado médio final" << endl;
+	if (JSON) {
+		cout << R"("average":)";
+	} else {
+		cout << "=================================================" << endl;
+		cout << "=================================================" << endl;
+		cout << "=================================================" << endl;
+		cout << "Resultado médio final" << endl;
+	}
 	printStats(f);
 	printConfidenceInterval(rounds);
-
+	if (JSON) cout << "}" << endl;
 	return 0;
 }
