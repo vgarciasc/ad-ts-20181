@@ -451,10 +451,10 @@ int main(int argc, char *argv[]) {
 	queue<Packet *> data, voice; // Filas de data e voz
 	int interruptedDataPackages = 0; // Pacotes de dados interrompidos (usado para invalidar os respectivos pacotes quando a antiga saída aparecer na lista)
 	SimulationRound rounds[SIMULATIONS + 1]; // Estatísticas das várias rodadas de simulação.
-	double lastTime = 0, lastArrivalTime = 0.0;
+	double lastTime = 0;
 
 	// Configurações iniciais
-	srand(time(0));
+	srand(static_cast<unsigned int>(time(nullptr)));
 	setup(arrivals);
 	for (int i = 0; i <= SIMULATIONS; ++i) {
 		setupSimulationStats(rounds[i]);
