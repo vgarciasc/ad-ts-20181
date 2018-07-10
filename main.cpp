@@ -180,7 +180,7 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
  * @param rounds
  */
 void countPacketIntoStatistics(Packet *packet, SimulationRound &s) {
-	if (packet->simulation) {
+	if (packet->simulation != -1) {
 		switch (packet->type) {
 			case PackageType::DATA:
 				s.T1Acc += packet->totalTime;
