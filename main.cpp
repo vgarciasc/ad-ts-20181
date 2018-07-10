@@ -56,7 +56,7 @@ int genDataPackageSize() {
 		return 1500;
 	else
 		// TODO corrigir probabilidade das pontas
-		return genRandUnitary() * 1436 + 64;
+		return static_cast<int>(genRandUnitary() * 1436 + 64);
 }
 
 auto genDataServiceTime = []() {
@@ -398,6 +398,16 @@ void printConfidenceInterval(SimulationRound rounds[]) {
 	VarianceNq2 /= (SIMULATIONS - 1);
 	VarianceJitterMean /= (SIMULATIONS - 1);
 	VarianceJitterVariance /= (SIMULATIONS - 1);
+
+	VarianceT1 = sqrt(VarianceT1);
+	VarianceW1 = sqrt(VarianceW1);
+	VarianceX1 = sqrt(VarianceX1);
+	VarianceNq1 = sqrt(VarianceNq1);
+	VarianceT2 = sqrt(VarianceT2);
+	VarianceW2 = sqrt(VarianceW2);
+	VarianceNq2 = sqrt(VarianceNq2);
+	VarianceJitterMean = sqrt(VarianceJitterMean);
+	VarianceJitterVariance = sqrt(VarianceJitterVariance);
 
 	VarianceT1 *= percentil90 / sqrt(SIMULATIONS);
 	VarianceW1 *= percentil90 / sqrt(SIMULATIONS);
