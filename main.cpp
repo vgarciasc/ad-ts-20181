@@ -74,7 +74,7 @@ double genDataArrivalTime() {
 #define DATA_ARRIVAL_TIME genDataArrivalTime()
 
 /*Voice*/
-const int VOICE_CHANNELS = 30;
+int VOICE_CHANNELS = 30;
 const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 const int VOICE_PACKAGE_SIZE_IN_BITS = 512;
 constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
@@ -94,11 +94,11 @@ auto genSilencePeriod = []() {
 // Variáveis globais de Debug
 double debug_tempo_entre_chegadas = 0;
 double debug_max_time = 0;
-int debug_activePeriodLength[VOICE_CHANNELS];
+int *debug_activePeriodLength;
 
 // Variáveis globais
 Packet *server;
-double channelsLastDeparture[VOICE_CHANNELS]; // controle de última saída dos canais de voz (usado no cálculo do jitter)
+double *channelsLastDeparture; // controle de última saída dos canais de voz (usado no cálculo do jitter)
 
 
 /*FUNÇÕES*/
@@ -110,6 +110,9 @@ double channelsLastDeparture[VOICE_CHANNELS]; // controle de última saída dos 
  */
 void setup(priority_queue<Event> &arrivals) {
 	arrivals.PUSH(Event)(DATA_ARRIVAL_TIME, EventType::DATA, new Packet(-1, DATA_TIME_OF_SERVICE))ENDPUSH;
+    channelsLastDeparture = new double[VOICE_CHANNELS];
+    debug_activePeriodLength = new int[VOICE_CHANNELS];
+
 	for (int i = 0; i < VOICE_CHANNELS; ++i) {
 		arrivals.PUSH(Event)(VOICE_SILENCE_TIME, EventType::VOICE, new Packet(-1, i, VOICE_TIME_OF_SERVICE))ENDPUSH;
 		channelsLastDeparture[i] = -1;
@@ -567,6 +570,12 @@ int main(int argc, char *argv[]) {
 				return 0;
             case 'q': // Número de rodadas de simulação
                 SIMULATIONS = stoi(argv[++p]);
+                break;
+            case 'v': // Numero de canais de voz
+                VOICE_CHANNELS = stoi(argv[++p]);
+                break;
+            case 's': // Numero fixo de pacotes de voz por periodo ativo
+                FIXED_ACTIVE_PERIOD = stoi(argv[++p]);
                 break;
 			default:
 				cout << "Opção " << argv[p] << " inválida" << endl;
