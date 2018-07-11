@@ -80,7 +80,7 @@ double genDataArrivalTime() {
 
 /*Voice*/
 int VOICE_CHANNELS = 30;
-const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
+double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
 int VOICE_PACKAGE_SIZE_IN_BITS = 512;
 double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
@@ -556,6 +556,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 's': // Numero fixo de pacotes de voz por periodo ativo
                 FIXED_ACTIVE_PERIOD = stoi(argv[++p]);
+                break;
+		    case 'w': // Mudar 'gap' entre pacotes de voz (original: 16ms)
+                VOICE_ARRIVAL_TIME = stod(argv[++p]);
                 break;
             case 'y': // Duraçao fixa do periodo de silencio
                 FIXED_SILENCE_PERIOD = stod(argv[++p]);
