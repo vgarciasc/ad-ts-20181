@@ -413,9 +413,14 @@ void printHelp() {
 	cout << "\t-h\t\tMostra essa ajuda" << endl;
 	cout << "\t-a int\tNúmero de amostras" << endl;
 	cout << "\t-t int\tNúmero de amostras do período transiente" << endl;
-	cout << "\t-s int\tNúmero de rodadas de simulação" << endl;
+	cout << "\t-r int\tNúmero de rodadas de simulação" << endl;
+	cout << "\t-v int\tNúmero de canais de voz" << endl;
+	cout << "\t-s int\tNúmero pacotes por canal de voz" << endl;
 	cout << "\t-u double\tUtilização da fila 1" << endl;
-	cout << "\t-i\tFila de dados pode ser interrompida ()" << endl;
+	cout << "\t-i\tFila de dados pode ser interrompida" << endl;
+	cout << "\t-pj\tImprime no formato JSON" << endl;
+	cout << "\t-pt\tImprime no formato JSON as médias sendo cálculadas a durante o período transiente" << endl;
+	cout << "\t-pi\tImprime no formato JSON com os valores atualizados de I.C. a cada rodada da simulação" << endl;
 }
 
 void runSimulationRound(
