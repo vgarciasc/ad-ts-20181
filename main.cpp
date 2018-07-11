@@ -25,7 +25,40 @@ using namespace std;
 // Parâmetros da simulação
 int SAMPLES = 100;                 // Número de amostras por rodada
 int SIMULATIONS = 5;                   // Número de rodadas de simulação
-const double percentil90 = 1.65;
+double percentil90(int s){ // Valores retirados da tabela t-Student
+	switch  (s){
+		case 1: return 6.314;
+		case 2: return 2.92;
+		case 3: return 2.353;
+		case 4: return 2.132;
+		case 5: return 2.015;
+		case 6: return 1.943;
+		case 7: return 1.895;
+		case 8: return 1.860;
+		case 9: return 1.833;
+		case 10: return 1.812;
+		case 11: return 1.796;
+		case 12: return 1.782;
+		case 13: return 1.771;
+		case 14: return 1.761;
+		case 15: return 1.753;
+		case 16: return 1.746;
+		case 17: return 1.740;
+		case 18: return 1.734;
+		case 19: return 1.729;
+		case 20: return 1.725;
+		case 21: return 1.721;
+		case 22: return 1.717;
+		case 23: return 1.714;
+		case 24: return 1.711;
+		case 25: return 1.708;
+		case 26: return 1.706;
+		case 27: return 1.703;
+		case 28: return 1.701;
+		case 29: return 1.1699;
+		default: return 1.645;
+	}
+};
 bool PREEMPTION = false;               // Interrupção dos pacotes de dados em caso de chegada de pacote de voz
 double UTILIZATION_1 = 0.1;            // ρ1 (utilização da fila de dados)
 constexpr double SERVER_SPEED = 2e6;   // Velocidade do servidor (2Mb/segundo)
@@ -294,15 +327,16 @@ void printConfidenceInterval(SimulationRound rounds[], int simulations = SIMULAT
 	VarianceJitterMean = sqrt(VarianceJitterMean);
 	VarianceJitterVariance = sqrt(VarianceJitterVariance);
 
-	VarianceT1 *= percentil90 / sqrt(simulations);
-	VarianceW1 *= percentil90 / sqrt(simulations);
-	VarianceX1 *= percentil90 / sqrt(simulations);
-	VarianceNq1 *= percentil90 / sqrt(simulations);
-	VarianceT2 *= percentil90 / sqrt(simulations);
-	VarianceW2 *= percentil90 / sqrt(simulations);
-	VarianceNq2 *= percentil90 / sqrt(simulations);
-	VarianceJitterMean *= percentil90 / sqrt(simulations);
-	VarianceJitterVariance *= percentil90 / sqrt(simulations);
+	double p = percentil90(simulations) / sqrt(simulations);
+	VarianceT1 *= p;
+	VarianceW1 *= p;
+	VarianceX1 *= p;
+	VarianceNq1 *= p;
+	VarianceT2 *= p;
+	VarianceW2 *= p;
+	VarianceNq2 *= p;
+	VarianceJitterMean *= p;
+	VarianceJitterVariance *= p;
 	if (printMode >= PrintMode::JSON) {
 		cout << ",\"confidenceInterval\":{" <<
 			 R"("t1":{"lesser":)" << T1 - VarianceT1 << ",\"mean\":" << T1 << ",\"upper\":" << T1 + VarianceT1 << ",\"percentage\":" << (T1 ==0?0:(VarianceT1 * 200 / T1))<< "}," <<
