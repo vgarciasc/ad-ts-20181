@@ -272,19 +272,36 @@ void calculateRoundStatistics(SimulationRound &s) {
 }
 
 // Outputs
+void printStats(SimulationRound &s) {
+#ifdef LOG
+	cout << "Tempo médio entre chegadas: " << (debug_tempo_entre_chegadas / SAMPLES) << endl;
+	cout << "lambda_1: " << n1Packages / debug_max_time << " pacotes dados/seg" << endl;
+	cout << "lambda_2: " << n2Packages / debug_max_time << " pacotes voz/seg" << endl;
+	cout << "Max Time: " << debug_max_time << endl;
+#endif
+	if (printMode >= PrintMode::JSON) {
+		cout << R"({"t1":)" << s.T1 << R"(,"w1":)" << s.T1 - s.X1 << R"(,"x1":)" << s.X1 << R"(,"nq1":)" << s.Nq1 <<
+			 R"(,"t2":)" << s.T2 << R"(,"w2":)" << s.T2 - X2 << R"(,"x2":)" << X2 << R"(,"nq2":)" << s.Nq2 <<
+			 R"(,"jitterE":)" << s.JitterMean << R"(,"jitterV":)" << s.JitterVariance << R"(})";
+	} else {
+		cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
+		cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
+			 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]: " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
+	}
+}
 
 void printConfidenceInterval(SimulationRound rounds[], int simulations = SIMULATIONS) {
 	if (simulations < 2)
 		return;
 	SimulationRound &f = rounds[0];
-	double  T1 = f.T1 / simulations,
-			X1 = f.X1 / simulations,
-			Nq1 = f.Nq1 / simulations,
-			T2 = f.T2 / simulations,
-			Nq2 = f.Nq2 / simulations,
-			JitterMean = f.JitterMean / simulations,
-			JitterVariance = f.JitterVariance / simulations,
-			W1 = T1 - X1,
+	double  T1  = f.T1 = f.T1 / simulations,
+			X1  = f.X1 = f.X1 / simulations,
+			Nq1  = f.Nq1 = f.Nq1 / simulations,
+			T2  = f.T2 = f.T2 / simulations,
+			Nq2  = f.Nq2 = f.Nq2 / simulations,
+			JitterMean  = f.JitterMean = f.JitterMean / simulations,
+			JitterVariance  = f.JitterVariance = f.JitterVariance / simulations;
+	double  W1 = T1 - X1,
 			W2 = T2 - X2,
 			VarianceT1 = 0,
 			VarianceW1 = 0,
@@ -295,6 +312,7 @@ void printConfidenceInterval(SimulationRound rounds[], int simulations = SIMULAT
 			VarianceNq2 = 0,
 			VarianceJitterMean = 0,
 			VarianceJitterVariance = 0;
+	printStats(f);
 	for (int i = 1; i <= simulations; ++i) {
 		SimulationRound &s = rounds[i];
 		VarianceT1 += (s.T1 - T1) * (s.T1 - T1);
@@ -380,23 +398,6 @@ void printStats(SimulationRound rounds[], int r) {
 			 R"(,"jitterE":)" << s.JitterMean << R"(,"jitterV":)" << s.JitterVariance;
 		if (printMode == PrintMode::CONFIDENCE_INTERVAL) printConfidenceInterval(rounds, r);
 		cout << R"(})";
-	} else {
-		cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
-		cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
-			 ", E[X2]: " << X2 << ", E[Nq2]: " << s.Nq2 << ", E[Δ]: " << s.JitterMean << ", V(Δ):" << s.JitterVariance << endl;
-	}
-}
-void printStats(SimulationRound &s) {
-#ifdef LOG
-	cout << "Tempo médio entre chegadas: " << (debug_tempo_entre_chegadas / SAMPLES) << endl;
-	cout << "lambda_1: " << n1Packages / debug_max_time << " pacotes dados/seg" << endl;
-	cout << "lambda_2: " << n2Packages / debug_max_time << " pacotes voz/seg" << endl;
-	cout << "Max Time: " << debug_max_time << endl;
-#endif
-	if (printMode >= PrintMode::JSON) {
-		cout << R"({"t1":)" << s.T1 << R"(,"w1":)" << s.T1 - s.X1 << R"(,"x1":)" << s.X1 << R"(,"nq1":)" << s.Nq1 <<
-			 R"(,"t2":)" << s.T2 << R"(,"w2":)" << s.T2 - X2 << R"(,"x2":)" << X2 << R"(,"nq2":)" << s.Nq2 <<
-			 R"(,"jitterE":)" << s.JitterMean << R"(,"jitterV":)" << s.JitterVariance << R"(})";
 	} else {
 		cout << "E[T1]: " << s.T1 << ", E[W1]: " << s.T1 - s.X1 << ", E[X1]: " << s.X1 << ", E[Nq1]: " << s.Nq1 << endl;
 		cout << "E[T2]: " << s.T2 << ", E[W2]: " << s.T2 - X2 <<
@@ -693,7 +694,6 @@ int main(int argc, char *argv[]) {
 			cout << "=================================================" << endl;
 			cout << "Resultado médio final" << endl;
 		}
-		printStats(f);
 		printConfidenceInterval(rounds);
 		if (printMode >= PrintMode::JSON ) cout << "}" << endl;
 	} else {
