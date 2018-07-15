@@ -27,15 +27,15 @@ int SAMPLES = 100;                 // Número de amostras por rodada
 int SIMULATIONS = 5;                   // Número de rodadas de simulação
 double percentil90(int s){ // Valores retirados da tabela t-Student
 	switch  (s){
-		case 1: return 6.314;
-		case 2: return 2.92;
-		case 3: return 2.353;
-		case 4: return 2.132;
-		case 5: return 2.015;
-		case 6: return 1.943;
-		case 7: return 1.895;
-		case 8: return 1.860;
-		case 9: return 1.833;
+		case 1:  return 6.314;
+		case 2:  return 2.92;
+		case 3:  return 2.353;
+		case 4:  return 2.132;
+		case 5:  return 2.015;
+		case 6:  return 1.943;
+		case 7:  return 1.895;
+		case 8:  return 1.860;
+		case 9:  return 1.833;
 		case 10: return 1.812;
 		case 11: return 1.796;
 		case 12: return 1.782;
@@ -63,7 +63,6 @@ bool PREEMPTION = false;               // Interrupção dos pacotes de dados em 
 double UTILIZATION_1 = 0.1;            // ρ1 (utilização da fila de dados)
 constexpr double SERVER_SPEED = 2e6;   // Velocidade do servidor (2Mb/segundo)
 int TRANSIENT_SAMPLE_NUMBER = 50000;  // Amostras colocadas no período transiente
-int FIXED_ACTIVE_PERIOD = 0;
 enum class PrintMode { NORMAL, JSON, TRANSIENT, CONFIDENCE_INTERVAL };
 PrintMode printMode = PrintMode::NORMAL;
 struct SimulationRound {
@@ -74,6 +73,13 @@ struct SimulationRound {
 			T1, X1, Nq1, T2, Nq2, JitterMean, JitterVariance;    // Estatísticas finais da rodada
 };
 
+// Variáveis globais de Debug
+int FIXED_ACTIVE_PERIOD = 0; // Fixar qt. pacotes no periodo ativo
+double FIXED_SILENCE_PERIOD = -1; // Fixar periodo de silencio
+double debug_tempo_entre_chegadas = 0;
+double debug_max_time = 0;
+int *debug_activePeriodLength;
+
 double genRandUnitary() {
 	return ((double) rand() / RAND_MAX);
 }
@@ -81,7 +87,6 @@ double genRandUnitary() {
 /*Data*/
 // Data channel random variable generators
 int genDataPackageSize() {
-//    return 755;
 	double x = genRandUnitary();
 	if (x < .3)
 		return 64;
@@ -108,26 +113,22 @@ double genDataArrivalTime() {
 
 /*Voice*/
 int VOICE_CHANNELS = 30;
-const double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
-const int VOICE_PACKAGE_SIZE_IN_BITS = 512;
-constexpr double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
+double VOICE_ARRIVAL_TIME = .016; // Tempo até o próximo pacote de voz durante o período ativo em segundos
+int VOICE_PACKAGE_SIZE_IN_BITS = 512;
+double VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED; // Tempo de transmissão do pacote de voz em segundos
 const int MEAN_N_VOICE_PACKAGE = 22;
 const double MEAN_SILENCE_PERIOD_DURATION = .65; // In seconds
-const double X2 = VOICE_TIME_OF_SERVICE;
+double X2 = VOICE_TIME_OF_SERVICE;
 
 // Voice channel random variable generators
 auto genEndOfActivePeriod = []() {
 	return genRandUnitary() < (1.0 / MEAN_N_VOICE_PACKAGE);
 };
 auto genSilencePeriod = []() {
+    if (FIXED_SILENCE_PERIOD != -1) return FIXED_SILENCE_PERIOD;
 	return -log(genRandUnitary()) / (1.0 / MEAN_SILENCE_PERIOD_DURATION);
 };
 #define VOICE_SILENCE_TIME genSilencePeriod()
-
-// Variáveis globais de Debug
-double debug_tempo_entre_chegadas = 0;
-double debug_max_time = 0;
-int *debug_activePeriodLength;
 
 // Variáveis globais
 Packet *server;
@@ -209,7 +210,7 @@ Packet *serveNextEvent(priority_queue<Event> &events_queue, queue<Packet *> &voi
  */
 void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime, SimulationRound &s) {
 	double t = currentTime - lastTime;
-	if (server != nullptr && server->type == PackageType::DATA) {
+	if (server != nullptr && server->type == PacketType::DATA) {
 		Nq1--;
 	}
 	s.totalDataTimeInQueue += Nq1 * t;
@@ -224,12 +225,12 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
 void countPacketIntoStatistics(Packet *packet, SimulationRound &s) {
 	if (packet->simulation != -1) {
 		switch (packet->type) {
-			case PackageType::DATA:
+			case PacketType::DATA:
 				s.T1Acc += packet->totalTime;
 				s.n1Packages++;
 				s.X1Acc += packet->serviceTime + packet->property.wastedTime;
 				break;
-			case PackageType::VOICE:
+			case PacketType::VOICE:
 				s.T2Acc += packet->totalTime;
 				s.n2Packages++;
 				// Jitter incrementado do lado de fora
@@ -414,9 +415,14 @@ void printHelp() {
 	cout << "\t-h\t\tMostra essa ajuda" << endl;
 	cout << "\t-a int\tNúmero de amostras" << endl;
 	cout << "\t-t int\tNúmero de amostras do período transiente" << endl;
-	cout << "\t-s int\tNúmero de rodadas de simulação" << endl;
+	cout << "\t-r int\tNúmero de rodadas de simulação" << endl;
+	cout << "\t-v int\tNúmero de canais de voz" << endl;
+	cout << "\t-s int\tNúmero pacotes por canal de voz" << endl;
 	cout << "\t-u double\tUtilização da fila 1" << endl;
-	cout << "\t-i\tFila de dados pode ser interrompida ()" << endl;
+	cout << "\t-i\tFila de dados pode ser interrompida" << endl;
+	cout << "\t-pj\tImprime no formato JSON" << endl;
+	cout << "\t-pt\tImprime no formato JSON as médias sendo cálculadas a durante o período transiente" << endl;
+	cout << "\t-pi\tImprime no formato JSON com os valores atualizados de I.C. a cada rodada da simulação" << endl;
 }
 
 void runSimulationRound(
@@ -468,21 +474,21 @@ void runSimulationRound(
 
 				// Fixar o período ativo (útil para testes de correção)
 				if (FIXED_ACTIVE_PERIOD) {
-                    if (debug_activePeriodLength[0] < 4) {
+                    if (debug_activePeriodLength[0] < FIXED_ACTIVE_PERIOD) {
                         debug_activePeriodLength[0]++;
-                        arrival.packet->property.channel.lastVoicePackage = false;
+                        arrival.packet->property.channel.lastVoicePacket = false;
                     } else {
                         t += VOICE_SILENCE_TIME;
-                        arrival.packet->property.channel.lastVoicePackage = true;
+                        arrival.packet->property.channel.lastVoicePacket = true;
                         debug_activePeriodLength[0] = 0;
                     }
 				}
 				else {
-				    // Se o período ativo deveria terminar, marca o pacote como o último do período ativo e
-                    // insere um periodo de silencio exponencial antes da chegada do próximo pacote
+				// Se o período ativo deveria terminar, marca o pacote como o último do período ativo e
+                // insere um periodo de silencio exponencial antes da chegada do próximo pacote
                     if (genEndOfActivePeriod()) {
                         t += VOICE_SILENCE_TIME;
-                        arrival.packet->property.channel.lastVoicePackage = true;
+                        arrival.packet->property.channel.lastVoicePacket = true;
                     }
                 }
 
@@ -493,7 +499,7 @@ void runSimulationRound(
 				    // Se servidor vazio, entra no servidor e gera o evento de sua saída do servidor
 					serveEvent(arrival.packet, arrivals, arrival.time);
 					server = arrival.packet;
-				} else if (PREEMPTION && server->type == PackageType::DATA) {
+				} else if (PREEMPTION && server->type == PacketType::DATA) {
                     // Se servidor ocupado com dados e preempção ativada, entra no servidor e calcula o tempo desperdiçado no servidor do pacote de dados
                     // O evento de término de serviço do pacote de dados ainda ocorrerá, porém ele verá que 'interruptedDataPackages'
                     // é maior do que 0, e portanto não irá 'efetivar' o seu envio
@@ -512,7 +518,7 @@ void runSimulationRound(
 				SimulationRound &r = rounds[arrival.packet->simulation];
                 switch (arrival.packet->type) {
                     // Pacote de dados é transmitido
-                    case PackageType::DATA:
+                    case PacketType::DATA:
                         if (interruptedDataPackages) {
                             // O pacote foi interrompido, portanto na verdade não terminou seu serviço
                             // Ele continua na sua posição na fila e decrementa-se o número de pacotes de dados interrompidos
@@ -529,11 +535,11 @@ void runSimulationRound(
                         }
                         break;
                     // Pacote de voz é transmitido
-                    case PackageType::VOICE:
+                    case PacketType::VOICE:
 					    // Calcula estatísticas de jitter
 						incrementJitter(r, arrival.packet->property.channel.number, arrival.time);
 						// Atualiza controle do tempo de saída do último pacote de voz do canal
-						if (!arrival.packet->property.channel.lastVoicePackage) {
+						if (!arrival.packet->property.channel.lastVoicePacket) {
 							channelsLastDeparture[arrival.packet->property.channel.number] = arrival.time;
 						} else { ;
 							channelsLastDeparture[arrival.packet->property.channel.number] = -1;
@@ -622,6 +628,17 @@ int main(int argc, char *argv[]) {
                 break;
             case 's': // Numero fixo de pacotes de voz por periodo ativo
                 FIXED_ACTIVE_PERIOD = stoi(argv[++p]);
+                break;
+		    case 'w': // Mudar 'gap' entre pacotes de voz (original: 16ms)
+                VOICE_ARRIVAL_TIME = stod(argv[++p]);
+                break;
+            case 'y': // Duraçao fixa do periodo de silencio
+                FIXED_SILENCE_PERIOD = stod(argv[++p]);
+                break;
+		    case 'z': // Outro tamanho para o pacote de voz
+                VOICE_PACKAGE_SIZE_IN_BITS = stoi(argv[++p]);
+                VOICE_TIME_OF_SERVICE = VOICE_PACKAGE_SIZE_IN_BITS / SERVER_SPEED;
+                X2 = VOICE_TIME_OF_SERVICE;
                 break;
 			default:
 				cout << "Opção " << argv[p] << " inválida" << endl;
