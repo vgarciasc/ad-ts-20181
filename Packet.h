@@ -5,13 +5,13 @@
 #ifndef AD_STATS_H
 #define AD_STATS_H
 
-enum class PackageType {
+enum class PacketType {
 	DATA, VOICE
 };
 
 struct ChannelProperties {
 	int number;
-	bool lastVoicePackage;
+	bool lastVoicePacket;
 };
 
 union Property {
@@ -24,7 +24,7 @@ public:
 	int simulation = 0;
 	double totalTime = 0;
 	double serviceTime = 0;
-	PackageType type;
+	PacketType type;
 	Property property;
 
 	/**
