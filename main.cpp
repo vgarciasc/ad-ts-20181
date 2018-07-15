@@ -27,15 +27,15 @@ int SAMPLES = 100;                 // Número de amostras por rodada
 int SIMULATIONS = 5;                   // Número de rodadas de simulação
 double percentil90(int s){ // Valores retirados da tabela t-Student
 	switch  (s){
-		case 1: return 6.314;
-		case 2: return 2.92;
-		case 3: return 2.353;
-		case 4: return 2.132;
-		case 5: return 2.015;
-		case 6: return 1.943;
-		case 7: return 1.895;
-		case 8: return 1.860;
-		case 9: return 1.833;
+		case 1:  return 6.314;
+		case 2:  return 2.92;
+		case 3:  return 2.353;
+		case 4:  return 2.132;
+		case 5:  return 2.015;
+		case 6:  return 1.943;
+		case 7:  return 1.895;
+		case 8:  return 1.860;
+		case 9:  return 1.833;
 		case 10: return 1.812;
 		case 11: return 1.796;
 		case 12: return 1.782;
@@ -209,7 +209,7 @@ Packet *serveNextEvent(priority_queue<Event> &events_queue, queue<Packet *> &voi
  */
 void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTime, double currentTime, SimulationRound &s) {
 	double t = currentTime - lastTime;
-	if (server != nullptr && server->type == PackageType::DATA) {
+	if (server != nullptr && server->type == PacketType::DATA) {
 		Nq1--;
 	}
 	s.totalDataTimeInQueue += Nq1 * t;
@@ -224,12 +224,12 @@ void registerAreaStatistics(unsigned long Nq2, unsigned long Nq1, double lastTim
 void countPacketIntoStatistics(Packet *packet, SimulationRound &s) {
 	if (packet->simulation != -1) {
 		switch (packet->type) {
-			case PackageType::DATA:
+			case PacketType::DATA:
 				s.T1Acc += packet->totalTime;
 				s.n1Packages++;
 				s.X1Acc += packet->serviceTime + packet->property.wastedTime;
 				break;
-			case PackageType::VOICE:
+			case PacketType::VOICE:
 				s.T2Acc += packet->totalTime;
 				s.n2Packages++;
 				// Jitter incrementado do lado de fora
@@ -474,10 +474,10 @@ void runSimulationRound(
 				if (FIXED_ACTIVE_PERIOD) {
                     if (debug_activePeriodLength[0] < 4) {
                         debug_activePeriodLength[0]++;
-                        arrival.packet->property.channel.lastVoicePackage = false;
+                        arrival.packet->property.channel.lastVoicePacket = false;
                     } else {
                         t += VOICE_SILENCE_TIME;
-                        arrival.packet->property.channel.lastVoicePackage = true;
+                        arrival.packet->property.channel.lastVoicePacket = true;
                         debug_activePeriodLength[0] = 0;
                     }
 				}
@@ -486,7 +486,7 @@ void runSimulationRound(
                     // insere um periodo de silencio exponencial antes da chegada do próximo pacote
                     if (genEndOfActivePeriod()) {
                         t += VOICE_SILENCE_TIME;
-                        arrival.packet->property.channel.lastVoicePackage = true;
+                        arrival.packet->property.channel.lastVoicePacket = true;
                     }
                 }
 
@@ -497,7 +497,7 @@ void runSimulationRound(
 				    // Se servidor vazio, entra no servidor e gera o evento de sua saída do servidor
 					serveEvent(arrival.packet, arrivals, arrival.time);
 					server = arrival.packet;
-				} else if (PREEMPTION && server->type == PackageType::DATA) {
+				} else if (PREEMPTION && server->type == PacketType::DATA) {
                     // Se servidor ocupado com dados e preempção ativada, entra no servidor e calcula o tempo desperdiçado no servidor do pacote de dados
                     // O evento de término de serviço do pacote de dados ainda ocorrerá, porém ele verá que 'interruptedDataPackages'
                     // é maior do que 0, e portanto não irá 'efetivar' o seu envio
@@ -516,7 +516,7 @@ void runSimulationRound(
 				SimulationRound &r = rounds[arrival.packet->simulation];
                 switch (arrival.packet->type) {
                     // Pacote de dados é transmitido
-                    case PackageType::DATA:
+                    case PacketType::DATA:
                         if (interruptedDataPackages) {
                             // O pacote foi interrompido, portanto na verdade não terminou seu serviço
                             // Ele continua na sua posição na fila e decrementa-se o número de pacotes de dados interrompidos
@@ -533,11 +533,11 @@ void runSimulationRound(
                         }
                         break;
                     // Pacote de voz é transmitido
-                    case PackageType::VOICE:
+                    case PacketType::VOICE:
 					    // Calcula estatísticas de jitter
 						incrementJitter(r, arrival.packet->property.channel.number, arrival.time);
 						// Atualiza controle do tempo de saída do último pacote de voz do canal
-						if (!arrival.packet->property.channel.lastVoicePackage) {
+						if (!arrival.packet->property.channel.lastVoicePacket) {
 							channelsLastDeparture[arrival.packet->property.channel.number] = arrival.time;
 						} else { ;
 							channelsLastDeparture[arrival.packet->property.channel.number] = -1;
