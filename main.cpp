@@ -295,13 +295,13 @@ void printConfidenceInterval(SimulationRound rounds[], int simulations = SIMULAT
 	if (simulations < 2)
 		return;
 	SimulationRound &f = rounds[0];
-	double  T1  = f.T1 = f.T1 / simulations,
-			X1  = f.X1 = f.X1 / simulations,
-			Nq1  = f.Nq1 = f.Nq1 / simulations,
-			T2  = f.T2 = f.T2 / simulations,
-			Nq2  = f.Nq2 = f.Nq2 / simulations,
-			JitterMean  = f.JitterMean = f.JitterMean / simulations,
-			JitterVariance  = f.JitterVariance = f.JitterVariance / simulations;
+	double  T1  = f.T1 / simulations,
+			X1  = f.X1 / simulations,
+			Nq1  = f.Nq1 / simulations,
+			T2  = f.T2 / simulations,
+			Nq2  = f.Nq2 / simulations,
+			JitterMean  = f.JitterMean / simulations,
+			JitterVariance  = f.JitterVariance / simulations;
 	double  W1 = T1 - X1,
 			W2 = T2 - X2,
 			VarianceT1 = 0,
@@ -313,7 +313,25 @@ void printConfidenceInterval(SimulationRound rounds[], int simulations = SIMULAT
 			VarianceNq2 = 0,
 			VarianceJitterMean = 0,
 			VarianceJitterVariance = 0;
-	printStats(f);
+	if (printMode != PrintMode::CONFIDENCE_INTERVAL){
+		if (printMode >= PrintMode::JSON) {
+			cout << R"(,"average":)";
+		} else {
+			cout << "=================================================" << endl;
+			cout << "=================================================" << endl;
+			cout << "=================================================" << endl;
+			cout << "Resultado médio final" << endl;
+		}
+		SimulationRound temp{};
+		temp.T1 = T1;
+		temp.X1 = X1;
+		temp.Nq1 = Nq1;
+		temp.T2 = T2;
+		temp.Nq2 = Nq2;
+		temp.JitterMean = JitterMean;
+		temp.JitterVariance = JitterVariance;
+		printStats(temp);
+	}
 	for (int i = 1; i <= simulations; ++i) {
 		SimulationRound &s = rounds[i];
 		VarianceT1 += (s.T1 - T1) * (s.T1 - T1);
@@ -700,17 +718,9 @@ int main(int argc, char *argv[]) {
 			}
 			printStats(rounds, i);
 		}
-		if (printMode >= PrintMode::JSON) cout << "],";
+		if (printMode >= PrintMode::JSON) cout << "]";
 
 		// Cálculo e output do intervalo de confiança
-		if (printMode >= PrintMode::JSON) {
-			cout << R"("average":)";
-		} else {
-			cout << "=================================================" << endl;
-			cout << "=================================================" << endl;
-			cout << "=================================================" << endl;
-			cout << "Resultado médio final" << endl;
-		}
 		printConfidenceInterval(rounds);
 		if (printMode >= PrintMode::JSON ) cout << "}" << endl;
 	} else {
