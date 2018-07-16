@@ -8,7 +8,7 @@
 
 #define PROGRESS_BAR // Mostra progresso para cada rodada de simulação
 //#define LOG // Coloca alguns outputs a mais para acompanhar valores
-//#define EMPLACE // Melhora o uso de memória (Comentado durante desenvolvimento para melhor uso da IDE)
+#define EMPLACE // Melhora o uso de memória (Comentado durante desenvolvimento para melhor uso da IDE)
 
 // Pequeno contorno à diferença entre push e emplace
 #ifdef EMPLACE
